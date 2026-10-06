@@ -53,3 +53,7 @@ def test_wrangler_config_serves_site_with_404_page():
     assert cfg["name"] == "cachecanary"
     assert cfg["assets"] == {"directory": "./site", "not_found_handling": "404-page"}
     assert "main" not in cfg  # static assets only, no Worker script
+    # Only the custom domains serve the site (no duplicate workers.dev copy, no public previews).
+    assert cfg["routes"] == [{"pattern": "cachecanary.com", "custom_domain": True},
+                             {"pattern": "www.cachecanary.com", "custom_domain": True}]
+    assert cfg["workers_dev"] is False and cfg["preview_urls"] is False

@@ -1,10 +1,17 @@
 // Cloudflare Workers static assets: serves the landing page in site/ at cachecanary.com.
 // _headers (security headers) and 404.html in site/ are applied by Cloudflare.
+// Only the custom domains serve the site; the workers.dev address and preview URLs are off.
 {
   "name": "cachecanary",
   "compatibility_date": "2026-10-06",
   "assets": {
     "directory": "./site",
     "not_found_handling": "404-page"
-  }
+  },
+  "routes": [
+    { "pattern": "cachecanary.com", "custom_domain": true },
+    { "pattern": "www.cachecanary.com", "custom_domain": true }
+  ],
+  "workers_dev": false,
+  "preview_urls": false
 }
