@@ -51,7 +51,8 @@ for (const scheme of ["light", "dark"]) {
                bodyBg: cs.backgroundColor, bodyFont: cs.fontFamily.slice(0, 30),
                termBorder: term ? getComputedStyle(term).borderTopWidth : null,
                installWraps: (() => { const s = document.getElementById('install-cmd'); return s ? s.getClientRects().length > 1 : null; })(),
-               h1: document.querySelector('h1')?.textContent, links: [...document.querySelectorAll('a')].map(a => a.href) };
+               h1: document.querySelector('h1')?.textContent, links: [...document.querySelectorAll('a')].map(a => a.href),
+               thirdParty: [...new Set(performance.getEntriesByType('resource').map(e => new URL(e.name)).filter(u => u.host !== location.host).map(u => u.host + u.pathname.split('/').slice(0, 2).join('/')))] };
     })()`);
     // Click Copy and read back what it did.
     const copy = await evaluate(`(async () => {

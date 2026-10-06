@@ -31,7 +31,10 @@ def test_no_inline_code_so_csp_can_stay_strict():
 def test_security_headers():
     headers = (SITE / "_headers").read_text()
     csp = re.search(r"Content-Security-Policy: (.+)", headers).group(1)
-    assert "default-src 'none'" in csp and "script-src 'self'" in csp and "style-src 'self'" in csp
+    assert "default-src 'none'" in csp and "style-src 'self'" in csp
+    # Scripts: our own plus Cloudflare Web Analytics only (cookieless visitor counts, allowed by Haris Oct 6 2026).
+    assert "script-src 'self' https://static.cloudflareinsights.com;" in csp
+    assert "connect-src 'self' https://cloudflareinsights.com;" in csp
     assert "unsafe-inline" not in csp and "unsafe-eval" not in csp and "frame-ancestors 'none'" in csp
     for h in ("X-Content-Type-Options: nosniff", "Referrer-Policy:", "Strict-Transport-Security:"):
         assert h in headers
