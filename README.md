@@ -26,7 +26,7 @@ Requests can be Converse-shaped (`system`/`toolConfig`/`cachePoint`) or InvokeMo
 Findings show up as annotations on the pull request and as a table in the job summary.
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v7
 
 # No AWS needed: static checks on a recorded request.
 - uses: Haarris/cachecanary@v0
