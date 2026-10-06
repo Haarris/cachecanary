@@ -90,3 +90,9 @@ def test_sitemap_and_robots():
     locs = [e.text for e in root.iter("{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
     assert locs == ["https://cachecanary.com/"]
     assert "Sitemap: https://cachecanary.com/sitemap.xml" in (SITE / "robots.txt").read_text()
+
+
+def test_site_and_readme_link_the_write_up():
+    url = "https://harisfarooq.substack.com/p/five-ways-claude-prompt-caching-quietly"
+    assert url in INDEX
+    assert url in (SITE.parent / "README.md").read_text()

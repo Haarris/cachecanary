@@ -138,6 +138,7 @@ system-changed: The system prompt changed inside the cached prefix (look for dat
   <li>Thinking or effort settings changed between two calls. On Bedrock that throws away the whole cache, system prompt included.</li>
   <li>An agent ran a dozen tools at once. Bedrock only searches back about 20 pieces of the conversation (messages, tool calls and tool results) for the cached part, so it can lose track of it.</li>
 </ul>
+<p>I wrote these up in more detail, with the bug reports behind each one and the lookback limit I measured: <a href="https://harisfarooq.substack.com/p/five-ways-claude-prompt-caching-quietly">Five ways Claude prompt caching quietly breaks on Amazon Bedrock</a>.</p>
 <p>Anthropic added cache diagnostics to its own API, so you can see why a request missed. They don't cover Bedrock. That's the gap CacheCanary fills.</p>
 
 <h2>Built on how Bedrock actually behaves</h2>
