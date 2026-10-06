@@ -109,3 +109,11 @@ def test_cli_version_flag(capsys):
     with pytest.raises(SystemExit) as info:
         cli.main(["--version"])
     assert info.value.code == 0 and cachecanary.__version__ in capsys.readouterr().out
+
+
+def test_license_files_and_metadata():
+    lic = (ROOT / "LICENSE").read_text()
+    assert "Apache License" in lic and "Version 2.0, January 2004" in lic
+    assert "Copyright 2026 Haris Farooq" in (ROOT / "NOTICE").read_text()
+    text = (ROOT / "pyproject.toml").read_text()
+    assert 'license = "Apache-2.0"' in text and 'license-files = ["LICENSE", "NOTICE"]' in text

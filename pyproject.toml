@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]  # 77+: SPDX license expressions (PEP 639)
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,6 +8,8 @@ dynamic = ["version"]
 description = "CacheCanary: know the moment your Claude prompt cache breaks on Amazon Bedrock, not when the bill arrives."
 readme = "README.md"
 requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 dependencies = []
 authors = [{ name = "Haris Farooq", email = "harisf98@gmail.com" }]
 keywords = ["claude", "anthropic", "amazon-bedrock", "bedrock", "prompt-caching", "llm", "cost", "observability", "ci"]

@@ -51,3 +51,6 @@ Findings show up as annotations on the pull request and as a table in the job su
 
 ## Live verification
 `scripts/live_test.py --region <region-without-production-traffic>` runs ~30 small synthetic calls and checks every assumption above against real Bedrock (hits, TTLs, streaming, per-model minimums, prefix changes, model switch, 20-block lookback).
+
+## License
+Apache License 2.0 — see [LICENSE](LICENSE). Copyright 2026 Haris Farooq.
