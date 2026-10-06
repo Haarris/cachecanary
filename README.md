@@ -50,7 +50,7 @@ The last one is easy to miss. The same prompt caches fine on Sonnet 4.6 (minimum
 | `lint request.json [--model ID]` | Checks one request for things that stop caching | it finds an error |
 | `diff previous.json next.json` | Explains why the second request missed the first one's cache | the cached part changed |
 | `probe request.json --model ID [--region R] [--stream]` | Sends the request twice and checks the second one read from cache | nothing was read from cache |
-| `logs files... [--by model\|principal] [--min-hit 0.5]` | Hit rate per model or IAM principal from Bedrock invocation logs | a group is under the threshold |
+| `logs files-or-folders... [--by model\|principal] [--min-hit 0.5] [--price 3]` | Hit rate and input cost per model or IAM principal from Bedrock invocation logs, plus how much the misses cost | a group is under the threshold |
 
 Exit code 2 means it couldn't run at all (bad file, no model access, no AWS credentials). `--json` and `--github` go before the command.
 
@@ -87,14 +87,30 @@ Problems show up as annotations on the pull request, plus a short table in the j
 
 `args` takes the same arguments as the CLI, separated by spaces. Paths with spaces aren't supported.
 
-## Production hit rates
+## Production hit rates and cost
 
-Turn on [Bedrock model invocation logging](https://docs.aws.amazon.com/bedrock/latest/userguide/model-invocation-logging.html) to S3 or CloudWatch, then point `logs` at the files:
+Turn on [Bedrock model invocation logging](https://docs.aws.amazon.com/bedrock/latest/userguide/model-invocation-logging.html) (it's off by default; you pay normal S3 or CloudWatch storage for the logs). Copy the log files to your machine and point `logs` at the folder. It reads every log file inside it, including the dated subfolders S3 creates:
+
+```bash
+aws s3 sync s3://YOUR-BUCKET/AWSLogs/YOUR-ACCOUNT-ID/BedrockModelInvocationLogs/ bedrock-logs/
+cachecanary logs bedrock-logs/ --min-hit 0.8
+```
+
+(If you set a key prefix for the logs, put it before `AWSLogs/`.) Here is the output on the redacted real logs in this repo:
 
 ```text
-$ cachecanary logs tests/fixtures/bedrock_invocation_logs_2026-10.json --min-hit 0.4
-us.anthropic.claude-sonnet-4-6: hit 50% over 8 calls (read 11496, write 11496, uncached 80, unparsed 0)
+$ cachecanary logs tests/fixtures/bedrock_invocation_logs_2026-10.json --min-hit 0.8
+us.anthropic.claude-sonnet-4-6: hit 50% over 8 calls (read 11496, write 11496, uncached 80, unparsed 0)  <-- below threshold
+  input cost $0.05 at list price; about $0.03 of it lost to cache misses (target: 80% hit rate)
+List prices: Amazon Bedrock on-demand, Oct 2026 (global. IDs at list, others +10%). Use --price for your own rate.
 ```
+
+How the dollars work:
+
+- **Input cost** is what these calls paid for input: uncached tokens at the input price, cache reads at the read price (0.1x for most models, 0.05x on Opus 5.5, 0.025x on Fable 5.1 and Mythos 5.1), and cache writes at 1.25x (5-minute) or 2x (1-hour).
+- **Lost to cache misses** compares that with the same calls at your target hit rate (`--min-hit`, or 90% if you don't set it). The tokens that would have been cache reads were paid for at full price instead. If you're at or above the target, it's zero.
+- **Prices** come from the Amazon Bedrock price list (on-demand, checked October 2026; the same in every Region we checked). `global.` model IDs are billed at list price, and regional or `us.`/`eu.`-style IDs cost 10% more. Claude 3.x models and application inference profile ARNs show no dollars. If you have a discount or a private price, pass `--price` with your input price per million tokens.
+- Output tokens aren't included. Caching doesn't change them.
 
 It reads S3 deliveries, CloudWatch exports and `aws logs filter-log-events` output, gzipped or not, including streamed responses. Bedrock logs InvokeModel calls under an inference profile ARN and Converse calls under the short model ID, so CacheCanary merges the two.
 
@@ -111,7 +127,8 @@ Everything runs on your machine or CI runner. Nothing is sent anywhere. `probe` 
 ## Limits
 
 - Token counts in `lint` are estimates. On English text Bedrock counted about 11% more than CacheCanary did, so near a model's minimum it warns you and suggests running `probe`.
-- Bedrock keeps cache counts inside the logged response body, and only bodies up to 100 KB are stored inline. Bigger ones show up as `unparsed`.
+- Bedrock keeps cache counts inside the logged response body, and only bodies up to 100 KB are stored inline. Bigger ones show up as `unparsed` and aren't in the dollar figures.
+- Dollar figures use list prices, which change. Batch, provisioned throughput and priority tiers aren't covered; use `--price` for those.
 - Bedrock only for now.
 
 ## What's next

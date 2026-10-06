@@ -60,3 +60,14 @@ def test_wrangler_config_serves_site_with_404_page():
     assert cfg["routes"] == [{"pattern": "cachecanary.com", "custom_domain": True},
                              {"pattern": "www.cachecanary.com", "custom_domain": True}]
     assert cfg["workers_dev"] is False and cfg["preview_urls"] is False
+
+
+def test_site_logs_example_matches_real_output(capsys, monkeypatch):
+    """The logs output shown on the page is exactly what the CLI prints for the redacted real logs."""
+    import html
+    from cachecanary import cli
+    monkeypatch.chdir(SITE.parent)
+    cli.main(["logs", "tests/fixtures/bedrock_invocation_logs_2026-10.json", "--min-hit", "0.8"])
+    page = html.unescape(re.sub(r"<[^>]+>", "", INDEX))
+    for line in capsys.readouterr().out.strip().split("\n"):
+        assert line in page, line

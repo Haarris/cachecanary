@@ -32,7 +32,7 @@
 <main>
 <h1>Find out when your Claude prompt cache stops working on Bedrock.</h1>
 
-<p class="lead">Bedrock can reuse the start of your prompt, like your instructions and tool list, and charge about 10% of the normal price for it. When that quietly stops, every request still works and you pay full price again. Usually the bill is the first sign. CacheCanary shows how often your requests use the cache, tells you why one didn't, and catches the problem in CI before it ships.</p>
+<p class="lead">Bedrock can reuse the start of your prompt, like your instructions and tool list, and charge about 10% of the normal price for it. When that quietly stops, every request still works and you pay full price again. Usually the bill is the first sign. CacheCanary shows how often your requests use the cache and what the misses cost you, tells you why a request missed, and catches the problem in CI before it ships.</p>
 
 <div class="install"><span id="install-cmd">pip install cachecanary</span><button type="button" id="copy" aria-label="Copy install command">Copy</button></div>
 <div class="actions">
@@ -49,6 +49,14 @@
 </div>
 <p class="note">The example uses Anthropic's list price for Claude Sonnet 4.6 ($3 per million input tokens). Bedrock prices can vary by region.</p>
 
+<h2>How you run it</h2>
+<ul>
+  <li><b>Install it</b> with <code>pip install cachecanary</code>. It runs on your laptop or in GitHub Actions. No account, no signup, no server.</li>
+  <li><b>Check a request:</b> save it as a JSON file and run one command. No AWS access needed.</li>
+  <li><b>See your real hit rate and what misses cost:</b> copy your Bedrock log files from S3 with one AWS command, then point CacheCanary at the folder.</li>
+  <li><b>Safe to try:</b> <code>lint</code>, <code>diff</code> and <code>logs</code> only read files. Only <code>probe</code> calls Bedrock, and only with your own AWS credentials.</li>
+</ul>
+
 <h2 id="how">How prompt caching works, in 30 seconds</h2>
 <ul>
   <li>You add a <b>cache point</b> to your request, usually right after your instructions and tools. Everything before it is the part Bedrock can reuse.</li>
@@ -60,10 +68,13 @@
 <h2>What CacheCanary does</h2>
 
 <h3>1. Shows whether you're losing money right now</h3>
-<p>Turn on Bedrock's invocation logging (to S3 or CloudWatch), then point CacheCanary at the log files. It tells you, per model, how often requests were served from the cache.</p>
-<div class="term"><pre><span class="p">$</span> cachecanary logs bedrock-logs/*.json.gz --min-hit 0.8
-us.anthropic.claude-sonnet-4-6: hit 50% over 8 calls (read 11496, write 11496, uncached 80, unparsed 0)  <span class="e">&lt;-- below threshold</span></pre></div>
-<p class="note">Here only half the calls used the cache, below the 80% target, so the command fails. Run it as a scheduled CI job and that failure becomes your alert.</p>
+<p>Turn on Bedrock's invocation logging (it's off by default), copy the log files to your machine and point CacheCanary at the folder. For each model it shows how often requests used the cache, what the input cost, and how much of that the misses cost you.</p>
+<div class="term"><pre><span class="p">$</span> aws s3 sync s3://YOUR-BUCKET/AWSLogs/YOUR-ACCOUNT-ID/BedrockModelInvocationLogs/ bedrock-logs/
+<span class="p">$</span> cachecanary logs bedrock-logs/ --min-hit 0.8
+us.anthropic.claude-sonnet-4-6: hit 50% over 8 calls (read 11496, write 11496, uncached 80, unparsed 0)  <span class="e">&lt;-- below threshold</span>
+  input cost $0.05 at list price; about $0.03 of it lost to cache misses (target: 80% hit rate)
+List prices: Amazon Bedrock on-demand, Oct 2026 (global. IDs at list, others +10%). Use --price for your own rate.</pre></div>
+<p class="note">Here only half the calls used the cache, below the 80% target, so the command fails and shows what the misses cost on this small sample. Run it as a scheduled CI job and that failure becomes your alert. Prices are Bedrock's published list prices; pass <code>--price</code> if you pay a different rate.</p>
 
 <h3>2. Tells you why a request missed the cache</h3>
 <p>Save a request your app sends to Bedrock as a JSON file. With boto3's Converse API that's one line:</p>

@@ -3,7 +3,7 @@
   cachecanary lint request.json [--model ID]
   cachecanary diff previous.json next.json [--model ID]
   cachecanary probe request.json --model ID [--region R] [--stream]
-  cachecanary logs file.json[.gz] ... [--by model|principal|model+principal] [--min-hit 0.5]
+  cachecanary logs FILE_OR_FOLDER ... [--by model|principal|model+principal] [--min-hit 0.5] [--price 3]
 
 Exit codes: 0 ok, 1 caching problem found (use to gate CI), 2 could not run (bad input, AWS error).
 Add --github (before the command) for GitHub Actions annotations and a job summary.
@@ -15,11 +15,13 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
-from cachecanary import __version__, diff, lint, logs, probe
+from cachecanary import __version__, diff, lint, logs, pricing, probe
 from cachecanary import github as gh
 from cachecanary.request import RequestError, normalize
 
 EXIT_OK, EXIT_PROBLEM, EXIT_ERROR = 0, 1, 2
+# Hit rate the 'lost to cache misses' figure compares against when --min-hit is not set.
+DEFAULT_TARGET_HIT = 0.9
 
 
 class InputError(Exception):
@@ -106,28 +108,100 @@ def cmd_probe(args) -> int:
     return EXIT_OK if result.passed else EXIT_PROBLEM
 
 
+LOG_SUFFIXES = (".json", ".jsonl", ".gz", ".log", ".txt")
+
+
+def _log_files(arg: str) -> list[Path]:
+    """A file as given, or every log-like file under a folder (S3 syncs nest them by date)."""
+    path = Path(arg)
+    if not path.exists():
+        raise InputError(f"file not found: {arg}")
+    if not path.is_dir():
+        return [path]
+    found = sorted(f for f in path.rglob("*") if f.is_file() and f.name.endswith(LOG_SUFFIXES)
+                   and not any(part.startswith(".") for part in f.relative_to(path).parts))
+    if not found:
+        raise InputError(f"no log files (.json, .jsonl, .gz, .log, .txt) under {arg}")
+    return found
+
+
+def _money(usd: float) -> str:
+    if usd == 0:
+        return "$0.00"
+    if usd < 0.01:
+        return "under $0.01"
+    return f"${usd:,.2f}"
+
+
+def _group_cost(g, target: float, custom_price: float | None) -> dict | None:
+    """Input cost and spend lost to misses for one group, priced per model. None if no model is priced."""
+    cost = lost = 0.0
+    priced_any, unpriced, sources = False, [], set()
+    for model, usage in g.by_model.items():
+        priced = pricing.rates_for(model, custom_price)
+        if priced is None:
+            if usage.total_input:
+                unpriced.append(model)
+            continue
+        priced_any = True
+        sources.add(priced.source)
+        cost += pricing.input_cost(usage, priced.rates)
+        lost += pricing.lost_to_misses(usage, priced.rates, target)
+    if not priced_any:
+        return None
+    return {"input_cost_usd": round(cost, 6), "lost_usd": round(lost, 6), "target_hit": target,
+            "price": "custom" if "custom" in sources else "list", "unpriced_models": sorted(unpriced)}
+
+
 def cmd_logs(args) -> int:
     stats = logs.ReadStats()
     records = []
-    for p in args.files:
-        path = Path(p)
-        if not path.exists():
-            raise InputError(f"file not found: {p}")
-        try:
-            records.extend(logs.iter_records(path, stats))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise InputError(f"could not read {p}: {exc}") from exc
+    for arg in args.files:
+        for path in _log_files(arg):
+            try:
+                records.extend(logs.iter_records(path, stats))
+            except (OSError, UnicodeDecodeError, EOFError, json.JSONDecodeError) as exc:
+                raise InputError(f"could not read {path}: {exc}") from exc
     groups = logs.aggregate(records, by=args.by)
+    target = args.min_hit if args.min_hit is not None else DEFAULT_TARGET_HIT
     data, lines, failing = {}, [], False
+    total_cost = total_lost = 0.0
+    any_priced = any_unpriced = False
     for key, g in sorted(groups.items(), key=lambda kv: -kv[1].usage.total_input):
         ratio = g.usage.hit_ratio
-        data[key] = {"calls": g.calls, "unparsed": g.unparsed, "hit_ratio": round(ratio, 3), **asdict(g.usage)}
+        cost = _group_cost(g, target, args.price)
+        data[key] = {"calls": g.calls, "unparsed": g.unparsed, "hit_ratio": round(ratio, 3), **asdict(g.usage),
+                     **(cost or {"input_cost_usd": None, "lost_usd": None, "target_hit": target})}
         flag = ""
         if args.min_hit is not None and g.calls - g.unparsed > 0 and ratio < args.min_hit:
             flag, failing = "  <-- below threshold", True
         lines.append(f"{key}: hit {ratio:.0%} over {g.calls} calls "
                      f"(read {g.usage.cache_read}, write {g.usage.cache_write}, uncached {g.usage.uncached_input}, "
                      f"unparsed {g.unparsed}){flag}")
+        if g.usage.total_input == 0:
+            continue
+        if cost is None:
+            any_unpriced = True
+            lines.append("  no price for this model; add --price <USD per million input tokens> to see dollars")
+            continue
+        any_priced = True
+        total_cost += cost["input_cost_usd"]
+        total_lost += cost["lost_usd"]
+        label = "at your price" if cost["price"] == "custom" else "at list price"
+        if cost["lost_usd"] > 0:
+            lines.append(f"  input cost {_money(cost['input_cost_usd'])} {label}; about {_money(cost['lost_usd'])} "
+                         f"of it lost to cache misses (target: {target:.0%} hit rate)")
+        else:
+            lines.append(f"  input cost {_money(cost['input_cost_usd'])} {label}; at or above the {target:.0%} target hit rate, "
+                         f"nothing lost to cache misses")
+        if cost["unpriced_models"]:
+            lines.append(f"  not priced: {', '.join(cost['unpriced_models'])} (add --price to include)")
+    if any_priced and len(data) > 1:
+        lines.append(f"Total: input cost {_money(total_cost)}; about {_money(total_lost)} lost to cache misses "
+                     f"(target: {target:.0%} hit rate)")
+    if any_priced and not args.price:
+        lines.append("List prices: Amazon Bedrock on-demand, Oct 2026 (global. IDs at list, others +10%). "
+                     "Use --price for your own rate.")
     if stats.bad_lines:
         lines.append(f"Skipped {stats.bad_lines} unreadable line(s).")
     _emit(data, args.json, lines or ["No invocation log records found."])
@@ -138,10 +212,13 @@ def cmd_logs(args) -> int:
             if below:
                 print(gh.annotation("error", f"{key}: cache hit rate {d['hit_ratio']:.0%} is below {args.min_hit:.0%}",
                                     title="CacheCanary: low cache hit rate"))
+            priced = d["input_cost_usd"] is not None
             rows.append([key, d["calls"], f"{d['hit_ratio']:.0%}", d["cache_read"], d["cache_write"], d["uncached_input"],
-                         d["unparsed"], "❌" if below else ""])
+                         d["unparsed"], _money(d["input_cost_usd"]) if priced else "",
+                         _money(d["lost_usd"]) if priced else "", "❌" if below else ""])
         gh.append_summary("### CacheCanary logs\n\n" + (gh.table(
-            ["group", "calls", "hit rate", "read", "write", "uncached", "unparsed", "below threshold"], rows)
+            ["group", "calls", "hit rate", "read", "write", "uncached", "unparsed", "input cost",
+             f"lost vs {target:.0%} hit", "below threshold"], rows)
             if rows else "No invocation log records found."))
     return EXIT_PROBLEM if failing else EXIT_OK
 
@@ -150,6 +227,16 @@ def _unit(value: str) -> float:
     f = float(value)
     if not 0 <= f <= 1:
         raise argparse.ArgumentTypeError("must be between 0 and 1")
+    return f
+
+
+def _price(value: str) -> float:
+    try:
+        f = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("must be a number, e.g. 3 for $3 per million input tokens") from None
+    if not 0 < f < 1000:  # also rejects nan and inf
+        raise argparse.ArgumentTypeError("must be a price in USD per million input tokens, e.g. 3")
     return f
 
 
@@ -182,7 +269,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("logs", help="cache hit rates from Bedrock invocation logs")
     p.add_argument("files", nargs="+")
     p.add_argument("--by", choices=["model", "principal", "model+principal"], default="model")
-    p.add_argument("--min-hit", type=_unit, help="fail if any group's hit ratio is below this (0-1)")
+    p.add_argument("--min-hit", type=_unit, help="fail if any group's hit ratio is below this (0-1); "
+                   "also the target for the dollars lost figure (default 0.9)")
+    p.add_argument("--price", type=_price, help="your input price in USD per million tokens, instead of list prices")
     p.set_defaults(func=cmd_logs)
     return parser
 

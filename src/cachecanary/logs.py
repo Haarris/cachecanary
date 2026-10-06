@@ -25,6 +25,8 @@ class Group:
     calls: int = 0
     unparsed: int = 0
     usage: Usage = field(default_factory=Usage)
+    # Usage split by model ID, so a group of several models can be priced per model.
+    by_model: dict[str, Usage] = field(default_factory=dict)
 
 
 @dataclass
@@ -126,4 +128,5 @@ def aggregate(records, by: str = "model") -> dict[str, Group]:
             g.unparsed += 1
             continue
         g.usage = g.usage + usage
+        g.by_model[model] = g.by_model.get(model, Usage()) + usage
     return dict(groups)

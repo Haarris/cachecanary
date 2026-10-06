@@ -11,6 +11,7 @@ class Usage:
     cache_read: int = 0
     cache_write: int = 0
     output: int = 0
+    cache_write_1h: int = 0  # the part of cache_write that went to the 1-hour cache, when reported
 
     @property
     def total_input(self) -> int:
@@ -26,6 +27,7 @@ class Usage:
             self.cache_read + other.cache_read,
             self.cache_write + other.cache_write,
             self.output + other.output,
+            self.cache_write_1h + other.cache_write_1h,
         )
 
 
@@ -38,16 +40,22 @@ def _int(value) -> int:
 
 def from_usage_dict(usage) -> Usage | None:
     """Converse: {inputTokens, cacheReadInputTokens, cacheWriteInputTokens, outputTokens} where
-    inputTokens is already the non-cached part. Claude Messages: {input_tokens,
-    cache_read_input_tokens, cache_creation_input_tokens, output_tokens}."""
+    inputTokens is already the non-cached part, plus cacheDetails [{ttl: "5m"|"1h", inputTokens}].
+    Claude Messages: {input_tokens, cache_read_input_tokens, cache_creation_input_tokens,
+    output_tokens}, plus cache_creation {ephemeral_5m_input_tokens, ephemeral_1h_input_tokens}."""
     if not isinstance(usage, dict):
         return None
     if any(k in usage for k in ("inputTokens", "cacheReadInputTokens", "cacheWriteInputTokens")):
+        details = usage.get("cacheDetails")
+        write_1h = sum(_int(d.get("inputTokens")) for d in details
+                       if isinstance(d, dict) and d.get("ttl") == "1h") if isinstance(details, list) else 0
         return Usage(_int(usage.get("inputTokens")), _int(usage.get("cacheReadInputTokens")),
-                     _int(usage.get("cacheWriteInputTokens")), _int(usage.get("outputTokens")))
+                     _int(usage.get("cacheWriteInputTokens")), _int(usage.get("outputTokens")), write_1h)
     if any(k in usage for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")):
+        creation = usage.get("cache_creation")
+        write_1h = _int(creation.get("ephemeral_1h_input_tokens")) if isinstance(creation, dict) else 0
         return Usage(_int(usage.get("input_tokens")), _int(usage.get("cache_read_input_tokens")),
-                     _int(usage.get("cache_creation_input_tokens")), _int(usage.get("output_tokens")))
+                     _int(usage.get("cache_creation_input_tokens")), _int(usage.get("output_tokens")), write_1h)
     return None
 
 
