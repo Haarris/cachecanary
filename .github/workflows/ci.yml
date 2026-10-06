@@ -67,3 +67,28 @@ jobs:
             if [ "$o" != "failure" ]; then echo "::error::expected failure, got '$o'"; exit 1; fi
           done
           echo "All expected failures happened."
+
+  action-from-published-tag:
+    # Uses the action exactly as outside users do (by the public v0 tag), not from this checkout.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: lint via Haarris/cachecanary@v0 (must pass)
+        uses: Haarris/cachecanary@v0
+        with:
+          command: lint
+          args: examples/request_good.json
+      - name: lint via Haarris/cachecanary@v0 on a too-short request (must fail)
+        id: published_short
+        continue-on-error: true
+        uses: Haarris/cachecanary@v0
+        with:
+          command: lint
+          args: examples/request_too_short.json
+      - name: check expected failure
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.published_short.outcome }}
+        run: |
+          if [ "$OUTCOME" != "failure" ]; then echo "::error::expected failure, got '$OUTCOME'"; exit 1; fi
