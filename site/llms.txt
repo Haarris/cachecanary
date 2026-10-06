@@ -1,0 +1,33 @@
+# CacheCanary
+
+> CacheCanary is a free, open-source (Apache-2.0) Python CLI and GitHub Action that catches Claude prompt caching breaking silently on Amazon Bedrock. It shows the cache hit rate and what misses cost from Bedrock invocation logs, explains why one request missed the previous request's cache, and checks saved requests in CI. It runs locally and sends nothing anywhere.
+
+Install with `pip install cachecanary`. Commands: `lint` (check one saved Converse or InvokeModel request), `diff` (explain why the second of two requests missed the first one's cache), `probe` (send a request twice to Bedrock and confirm the second reads from cache), `logs` (hit rate, input cost and dollars lost to misses from Bedrock invocation logs or a folder of them).
+
+What it checks, each verified against live Amazon Bedrock (Claude Sonnet 4.6, us-west-2, October 2026):
+
+- Dynamic text (dates, times, IDs) before a cache point, which makes every request a cache miss.
+- A cached prefix shorter than the model's minimum (512 to 4,096 tokens depending on the model), which caches nothing without an error.
+- More than 21 content blocks added between two cache points: Bedrock finds an earlier cache entry only up to 21 blocks back (21 added still hits, 22 always misses). Every tool call and tool result counts as a block.
+- A cache point with nothing before it in its own message, system or tools list: Bedrock rejects the request ("There is nothing available to cache").
+- A Converse cachePoint inside a toolResult's content: boto3 refuses it, and over plain HTTP Bedrock accepts the request but caches nothing.
+- Thinking or effort settings changed between requests: on Bedrock this throws away the whole cache, system prompt included. No effort setting behaves like "high".
+- Tool choice switched between auto/none and any/tool: the conversation part of the cache is written again.
+- Tools reordered or changed, history edited, model or API switched, more than 4 cache points, 1-hour cache after a 5-minute one.
+
+## Docs
+
+- [README](https://github.com/Haarris/cachecanary#readme): install, commands, every check, GitHub Action usage, limits
+- [Website](https://cachecanary.com/): overview, how prompt caching works, examples with real output
+- [PyPI](https://pypi.org/project/cachecanary/): package and release history
+- [GitHub Action on the Marketplace](https://github.com/marketplace/actions/cachecanary): `uses: Haarris/cachecanary@v0`
+
+## Background
+
+- [Five ways Claude prompt caching quietly breaks on Amazon Bedrock](https://harisfarooq.substack.com/p/five-ways-claude-prompt-caching-quietly): the failure patterns, the bug reports behind them, and the lookback measurement
+- [AWS Bedrock prompt caching docs](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html)
+
+## Optional
+
+- [Live lookback measurement script](https://github.com/Haarris/cachecanary/blob/main/scripts/live_lookback_boundary.py)
+- [Live agreement check for the 0.3 rules](https://github.com/Haarris/cachecanary/blob/main/scripts/live_v03_checks.py)

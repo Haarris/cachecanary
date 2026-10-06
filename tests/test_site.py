@@ -96,3 +96,15 @@ def test_site_and_readme_link_the_write_up():
     url = "https://harisfarooq.substack.com/p/five-ways-claude-prompt-caching-quietly"
     assert url in INDEX
     assert url in (SITE.parent / "README.md").read_text()
+
+
+def test_llms_txt_follows_the_format_and_links_resolve_locally():
+    text = (SITE / "llms.txt").read_text()
+    lines = text.splitlines()
+    assert lines[0] == "# CacheCanary" and any(l.startswith("> ") for l in lines[:4])
+    assert "## Docs" in text and "—" not in text
+    links = re.findall(r"\]\((https://[^)]+)\)", text)
+    assert "https://cachecanary.com/" in links and "https://github.com/Haarris/cachecanary#readme" in links
+    # Facts that must stay in step with the code.
+    from cachecanary.models import MAX_BLOCKS_ADDED
+    assert f"{MAX_BLOCKS_ADDED} added still hits, {MAX_BLOCKS_ADDED + 1} always misses" in text
