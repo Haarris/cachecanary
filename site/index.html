@@ -41,6 +41,14 @@
 </div>
 <p class="note under-actions">Free and open source (Apache 2.0). The tool runs on your machine and sends nothing anywhere.</p>
 
+<h2>What a broken cache costs</h2>
+<div class="facts">
+  <div class="fact"><b>10x</b><span>more for the cached part of every request when the cache stops hitting. Reads are billed at a tenth of the input price.</span></div>
+  <div class="fact"><b>$2,700 a month</b><span>extra for one agent with a 10,000-token prompt and 100,000 requests a month.</span></div>
+  <div class="fact"><b>2-3x</b><span>daily spend for LiteLLM users for six days in July 2026, from one library update.</span></div>
+</div>
+<p class="note">The example uses Anthropic's list price for Claude Sonnet 4.6 ($3 per million input tokens). Bedrock prices can vary by region.</p>
+
 <h2 id="how">What it looks like</h2>
 <p>Save a request your app sends to Bedrock as JSON and point CacheCanary at it.</p>
 <div class="term"><pre><span class="p">$</span> cachecanary lint request.json
@@ -79,6 +87,11 @@ system-changed: The system prompt changed inside the cached prefix (look for dat
 
 <h2>Built on how Bedrock actually behaves</h2>
 <p>The checks follow AWS's documented caching rules, and the core behaviour was verified against live Amazon Bedrock, including streaming, both cache TTLs and each model's minimum prompt size. The log reader is tested against real Bedrock invocation logs.</p>
+<div class="facts">
+  <div class="fact"><b>17</b><span>Claude models with their cache rules built in, including Sonnet 4.6, Haiku 4.5 and Opus 5.5</span></div>
+  <div class="fact"><b>All 4</b><span>Bedrock call types: Converse, InvokeModel and both streaming APIs</span></div>
+  <div class="fact"><b>~30 ms</b><span>to check a request on a laptop. No AWS account needed for lint and diff.</span></div>
+</div>
 
 <h2>Coming next</h2>
 <p>A hosted dashboard: cache hit rate and wasted spend per app, an alert when the rate drops, and the reason for each miss. It runs inside your own AWS account, so prompts never leave it.</p>

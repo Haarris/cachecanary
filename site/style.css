@@ -79,6 +79,10 @@
   }
   ul { padding-left: 20px; margin: 0 0 14px; }
   li { margin-bottom: 8px; }
+  .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 18px 0; }
+  .fact { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .fact b { display: block; font-size: 26px; letter-spacing: -0.01em; line-height: 1.25; margin-bottom: 4px; }
+  .fact span { color: var(--muted); font-size: 14px; line-height: 1.5; display: block; }
   .note { color: var(--muted); font-size: 15px; }
   .note.under-actions { margin-top: 12px; }
   footer { border-top: 1px solid var(--line); margin-top: 64px; padding: 24px 0 40px; color: var(--muted); font-size: 14px; }
@@ -88,6 +92,7 @@
     h1 { font-size: 30px; margin-top: 24px; }
     h2 { font-size: 21px; margin-top: 44px; }
     .lead { font-size: 17px; }
+    .facts { grid-template-columns: 1fr; }
     nav a:first-child { display: none; }
     .install { display: flex; width: 100%; justify-content: space-between; font-size: 14px; }
   }
