@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CacheCanary: catch broken Claude prompt caching on Bedrock</title>
-<meta name="description" content="A free CLI and GitHub Action that checks your Bedrock requests for broken Claude prompt caching, explains why a call missed the cache, and reads your invocation logs.">
+<meta name="description" content="A free CLI and GitHub Action that shows your Claude prompt cache hit rate on Amazon Bedrock, explains why a request missed the cache, and catches cache breaks in CI.">
 <meta property="og:title" content="CacheCanary">
 <meta property="og:description" content="Find out when your Claude prompt cache stops working on Amazon Bedrock, before the bill does.">
 <meta property="og:url" content="https://cachecanary.com/">
@@ -20,7 +20,7 @@
 
 <header>
   <a class="brand" href="/" aria-label="CacheCanary home">
-    <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="15" cy="17" r="11" fill="#f2c230"/><circle cx="19" cy="14" r="1.8" fill="#1d1d1b"/><path d="M25 16.5l5 1.5-5 1.8z" fill="#e8892b"/></svg>
+    <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 29.2h26" stroke="#8a5a2b" stroke-width="1.8" stroke-linecap="round"/><path d="M14.6 24.4l-.8 4.6M18.2 24l.4 5" stroke="#e8892b" stroke-width="1.4" stroke-linecap="round"/><path d="M10.5 19.5L2.2 25.4l4.4.4L12.8 22z" fill="#d9a514"/><ellipse cx="15.5" cy="18.6" rx="8.4" ry="6.2" transform="rotate(-24 15.5 18.6)" fill="#f2c230"/><circle cx="21.8" cy="11.2" r="4.7" fill="#f2c230"/><path d="M26 10l4.4 1.6-4.4 1.8z" fill="#e8892b"/><circle cx="23.2" cy="10.4" r="1.1" fill="#1d1d1b"/><path d="M9.6 19.6c2.2-4.4 6.8-5.6 9.6-4.2-1.2 3.8-5.4 6.4-9.6 4.2z" fill="#d9a514"/></svg>
     CacheCanary
   </a>
   <nav>
@@ -32,7 +32,7 @@
 <main>
 <h1>Find out when your Claude prompt cache stops working on Bedrock.</h1>
 
-<p class="lead">Cached prompts cost about a tenth as much to read. When caching breaks, requests still succeed and nothing errors. Usually the bill is the first sign. CacheCanary checks your requests in CI, tells you why a call missed the cache, and shows hit rates from your Bedrock logs.</p>
+<p class="lead">Bedrock can reuse the start of your prompt, like your instructions and tool list, and charge about 10% of the normal price for it. When that quietly stops, every request still works and you pay full price again. Usually the bill is the first sign. CacheCanary shows how often your requests use the cache, tells you why one didn't, and catches the problem in CI before it ships.</p>
 
 <div class="install"><span id="install-cmd">pip install cachecanary</span><button type="button" id="copy" aria-label="Copy install command">Copy</button></div>
 <div class="actions">
@@ -43,14 +43,33 @@
 
 <h2>What a broken cache costs</h2>
 <div class="facts">
-  <div class="fact"><b>10x</b><span>more for the cached part of every request when the cache stops hitting. Reads are billed at a tenth of the input price.</span></div>
+  <div class="fact"><b>90% off</b><span>is what cached prompt text costs on Bedrock. When the cache breaks, that text goes back to full price.</span></div>
   <div class="fact"><b>$2,700 a month</b><span>extra for one agent with a 10,000-token prompt and 100,000 requests a month.</span></div>
-  <div class="fact"><b>2-3x</b><span>daily spend for LiteLLM users for six days in July 2026, from one library update.</span></div>
+  <div class="fact"><b>2-3x</b><span>daily spend for <a href="https://docs.litellm.ai/blog/bedrock-invoke-prompt-caching-incident">LiteLLM users</a> for six days in July 2026, after one library update.</span></div>
 </div>
 <p class="note">The example uses Anthropic's list price for Claude Sonnet 4.6 ($3 per million input tokens). Bedrock prices can vary by region.</p>
 
-<h2 id="how">What it looks like</h2>
-<p>Save a request your app sends to Bedrock as JSON and point CacheCanary at it.</p>
+<h2 id="how">How prompt caching works, in 30 seconds</h2>
+<ul>
+  <li>You add a <b>cache point</b> to your request, usually right after your instructions and tools. Everything before it is the part Bedrock can reuse.</li>
+  <li>That part has to be exactly the same on every request. Change one character, like today's date, and Bedrock can't reuse it.</li>
+  <li>It also has to be long enough: at least 1,024 tokens on Sonnet 4.6 and 4,096 on Haiku 4.5. Shorter prompts are never cached, and nothing tells you.</li>
+  <li>A cached prompt lasts 5 minutes (or 1 hour if you ask for it), and every request that uses it starts the clock again.</li>
+</ul>
+
+<h2>What CacheCanary does</h2>
+
+<h3>1. Shows whether you're losing money right now</h3>
+<p>Turn on Bedrock's invocation logging (to S3 or CloudWatch), then point CacheCanary at the log files. It tells you, per model, how often requests were served from the cache.</p>
+<div class="term"><pre><span class="p">$</span> cachecanary logs bedrock-logs/*.json.gz --min-hit 0.8
+us.anthropic.claude-sonnet-4-6: hit 50% over 8 calls (read 11496, write 11496, uncached 80, unparsed 0)  <span class="e">&lt;-- below threshold</span></pre></div>
+<p class="note">Here only half the calls used the cache, below the 80% target, so the command fails. Run it as a scheduled CI job and that failure becomes your alert.</p>
+
+<h3>2. Tells you why a request missed the cache</h3>
+<p>Save a request your app sends to Bedrock as a JSON file. With boto3's Converse API that's one line:</p>
+<pre class="yaml"># kwargs: what you pass to client.converse(**kwargs)
+json.dump(kwargs, open("request.json", "w"))</pre>
+<p>Then check it, or compare it with an earlier one:</p>
 <div class="term"><pre><span class="p">$</span> cachecanary lint request.json
 <span class="w">[warn]</span> dynamic-in-prefix: Found ISO date text inside the cached prefix. If it changes per request, every call misses. (system[0])
 
@@ -59,38 +78,33 @@ system-changed: The system prompt changed inside the cached prefix (look for dat
 
 <span class="p">$</span> cachecanary lint request.json --model us.anthropic.claude-haiku-4-5-20251001-v1:0
 <span class="e">[error]</span> prefix-too-short: Prefix up to this checkpoint is ~1892 tokens; claude-haiku-4-5 needs at least 4096. The request succeeds but nothing is cached. (system[0])</pre></div>
-<p class="note">The same prompt caches fine on Sonnet 4.6, which needs 1,024 tokens, and never caches on Haiku 4.5, which needs 4,096.</p>
+<p class="note">In plain words: the first request has a date in its system prompt, so it changes every day. The second shows the system prompt changed between yesterday and today. The third prompt is too short for Haiku 4.5, so it's never cached, even though the same prompt caches fine on Sonnet 4.6. <code>system[0]</code> points to the first block of the system prompt.</p>
+
+<h3>3. Catches it before it ships</h3>
+<p>Add it to GitHub Actions. Problems show up as comments on the pull request, next to the file that caused them.</p>
+<pre class="yaml">- uses: Haarris/cachecanary@v0
+  with:
+    command: lint
+    args: tests/fixtures/agent_request.json --model us.anthropic.claude-sonnet-4-6</pre>
+<p>If your CI has AWS access, <code>probe</code> goes further: it sends the request to Bedrock twice and fails if the second one wasn't served from the cache.</p>
 
 <h2>Why caching breaks</h2>
 <p>Often nobody changed the prompt on purpose. These are the usual causes:</p>
 <ul>
-  <li>A library upgrade moved the system prompt or dropped the cache marker. <a href="https://docs.litellm.ai/blog/bedrock-invoke-prompt-caching-incident">This happened with LiteLLM in July 2026</a>: hit rates fell from about 90% to 25-45% and spend went up 2-3x for six days.</li>
-  <li>You moved to a new model ID or an inference profile ARN, and your library no longer knows it can cache.</li>
+  <li>A library upgrade moved the system prompt or dropped the cache point. <a href="https://docs.litellm.ai/blog/bedrock-invoke-prompt-caching-incident">This happened with LiteLLM in July 2026</a>: cache hits fell from about 90% to 25-45% and spend went up 2-3x for six days.</li>
+  <li>You switched to a new model ID or an inference profile (an AWS name that points to a model), and your library doesn't recognise it, so it stops asking for caching.</li>
   <li>A small edit put today's date, a request ID or the user's name into the system prompt.</li>
-  <li>Tools are built in a different order on each request.</li>
-  <li>An agent made a dozen parallel tool calls, and Bedrock only looks back about 20 blocks for the cached part.</li>
+  <li>Your tools are listed in a different order on each request.</li>
+  <li>An agent ran a dozen tools at once. Bedrock only searches back about 20 pieces of the conversation (messages, tool calls and tool results) for the cached part, so it can lose track of it.</li>
 </ul>
-<p>Anthropic added cache diagnostics to its own API, but it doesn't cover Bedrock. That's the gap CacheCanary fills.</p>
-
-<h2>Put it in CI</h2>
-<p>Problems show up as notes on the pull request, next to the file that caused them.</p>
-<pre class="yaml">- uses: Haarris/cachecanary@v0
-  with:
-    command: lint
-    args: tests/fixtures/agent_request.json --model us.anthropic.claude-sonnet-4-6
-
-# Or call Bedrock for real (needs AWS credentials)
-- uses: Haarris/cachecanary@v0
-  with:
-    command: probe
-    args: tests/fixtures/agent_request.json --model us.anthropic.claude-sonnet-4-6</pre>
+<p>Anthropic added cache diagnostics to its own API, so you can see why a request missed. They don't cover Bedrock. That's the gap CacheCanary fills.</p>
 
 <h2>Built on how Bedrock actually behaves</h2>
-<p>The checks follow AWS's documented caching rules, and the core behaviour was verified against live Amazon Bedrock, including streaming, both cache TTLs and each model's minimum prompt size. The log reader is tested against real Bedrock invocation logs.</p>
+<p>The checks follow AWS's documented caching rules. The core behaviour was verified against live Amazon Bedrock, including streaming responses, both cache lifetimes (5 minutes and 1 hour), and each model's minimum prompt size. The log reader is tested against real Bedrock invocation logs.</p>
 <div class="facts">
   <div class="fact"><b>17</b><span>Claude models with their cache rules built in, including Sonnet 4.6, Haiku 4.5 and Opus 5.5</span></div>
-  <div class="fact"><b>All 4</b><span>Bedrock call types: Converse, InvokeModel and both streaming APIs</span></div>
-  <div class="fact"><b>~30 ms</b><span>to check a request on a laptop. No AWS account needed for lint and diff.</span></div>
+  <div class="fact"><b>Both APIs</b><span>Converse and InvokeModel, streaming or not</span></div>
+  <div class="fact"><b>No AWS needed</b><span>to check a saved request. lint and diff run offline in about 30 ms.</span></div>
 </div>
 
 <h2>Coming next</h2>

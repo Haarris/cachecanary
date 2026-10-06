@@ -22,7 +22,13 @@ pip install "cachecanary[aws]"   # adds probe, which calls Bedrock
 
 ## Try it
 
-Save a request your app sends to Bedrock as JSON (Converse or InvokeModel format) and run:
+Save a request your app sends to Bedrock as JSON (Converse or InvokeModel format). With boto3's Converse API, dump the same kwargs you pass to `client.converse(**kwargs)`:
+
+```python
+json.dump(kwargs, open("request.json", "w"))
+```
+
+For InvokeModel, save the JSON body and pass `--model`. Then run:
 
 ```text
 $ cachecanary lint examples/request_bad.json
@@ -56,7 +62,7 @@ Exit code 2 means it couldn't run at all (bad file, no model access, no AWS cred
 - More than about 20 new content blocks since the last checkpoint, which is common after many parallel tool calls. Bedrock only looks back that far.
 - Model IDs or application inference profile ARNs that your library may not recognize, so it quietly stops sending cache markers.
 - A switch between the Converse and InvokeModel APIs, which builds a different prompt.
-- More than 4 checkpoints, an unknown TTL, or a 1-hour checkpoint after a 5-minute one.
+- More than 4 checkpoints, an unknown cache lifetime (TTL), or a 1-hour checkpoint after a 5-minute one.
 - A plain-string `system` field in InvokeModel, which can't carry `cache_control`.
 
 ## GitHub Action
@@ -94,7 +100,7 @@ It reads S3 deliveries, CloudWatch exports and `aws logs filter-log-events` outp
 
 ## How it's tested
 
-The checks follow AWS's documented prompt-caching rules. The core behaviour was verified against live Amazon Bedrock: Converse and InvokeModel, streaming, both cache TTLs, model minimums, prompt changes and the 20-block lookback. Every check also has unit tests. The log reader is tested against real Bedrock invocation logs (redacted copies are in [tests/fixtures](https://github.com/Haarris/cachecanary/tree/main/tests/fixtures)).
+The checks follow AWS's documented prompt-caching rules. The core behaviour was verified against live Amazon Bedrock: Converse and InvokeModel, streaming, both cache lifetimes (5 minutes and 1 hour), model minimums, prompt changes and the 20-block lookback. Every check also has unit tests. The log reader is tested against real Bedrock invocation logs (redacted copies are in [tests/fixtures](https://github.com/Haarris/cachecanary/tree/main/tests/fixtures)).
 
 To run the live checks yourself, use an AWS Region without production traffic: `python scripts/live_test.py --region <region>`.
 
