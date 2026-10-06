@@ -90,14 +90,11 @@ us.anthropic.claude-sonnet-4-6: hit 50% over 8 calls (read 11496, write 11496, u
 
 It reads S3 deliveries, CloudWatch exports and `aws logs filter-log-events` output, gzipped or not, including streamed responses. Bedrock logs InvokeModel calls under an inference profile ARN and Converse calls under the short model ID, so CacheCanary merges the two.
 
-## Tested on real Bedrock
+## How it's tested
 
-I ran the main cases against Amazon Bedrock in October 2026 using made-up prompts. The rest of the checks (checkpoint counts, TTL order, a plain-string `system`) follow the AWS documentation and are covered by unit tests.
+The checks follow AWS's documented prompt-caching rules and were verified against live Amazon Bedrock: Converse and InvokeModel, streaming, both cache TTLs, model minimums, prompt changes and the 20-block lookback. The log reader is tested against real Bedrock invocation logs (redacted copies are in [tests/fixtures](https://github.com/Haarris/cachecanary/tree/main/tests/fixtures)).
 
-- 11 of 11 scenarios behaved as expected: cache hits on Converse and InvokeModel, 5-minute and 1-hour TTLs, streaming, model minimums, a date in the system prompt, reordered tools, a model switch, and the 20-block lookback (3,097 tokens read from cache without an extra checkpoint, 5,121 with one).
-- The log parser matched the token counts the API returned, for all four call types. The redacted log records are in [tests/fixtures](https://github.com/Haarris/cachecanary/tree/main/tests/fixtures).
-
-You can rerun this in an AWS Region with no production traffic: `python scripts/live_test.py --region <region>`.
+To run the live checks yourself, use an AWS Region without production traffic: `python scripts/live_test.py --region <region>`.
 
 ## Privacy
 
