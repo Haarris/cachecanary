@@ -6,6 +6,7 @@
   cachecanary logs file.json[.gz] ... [--by model|principal|model+principal] [--min-hit 0.5]
 
 Exit codes: 0 ok, 1 caching problem found (use to gate CI), 2 could not run (bad input, AWS error).
+Add --github (before the command) for GitHub Actions annotations and a job summary.
 """
 
 import argparse
@@ -15,6 +16,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from cachecanary import diff, lint, logs, probe
+from cachecanary import github as gh
 from cachecanary.request import RequestError, normalize
 
 EXIT_OK, EXIT_PROBLEM, EXIT_ERROR = 0, 1, 2
@@ -41,6 +43,14 @@ def cmd_lint(args) -> int:
     findings = lint.lint(normalize(_load(args.request), args.model))
     lines = [f"[{f.severity}] {f.rule}: {f.message}" + (f" ({f.location})" if f.location else "") for f in findings]
     _emit([asdict(f) for f in findings], args.json, lines or ["No caching problems found."])
+    if args.github:
+        for f in findings:
+            level = "error" if f.severity == "error" else "warning"
+            where = f" ({f.location})" if f.location else ""
+            print(gh.annotation(level, f"{f.message}{where}", file=args.request, title=f"CacheCanary: {f.rule}"))
+        rows = [[f.severity, f.rule, f.location or "", f.message] for f in findings]
+        gh.append_summary(f"### CacheCanary lint: `{args.request}`\n\n" + (
+            gh.table(["severity", "rule", "location", "message"], rows) if rows else "No caching problems found. ✅"))
     return EXIT_PROBLEM if any(f.severity == "error" for f in findings) else EXIT_OK
 
 
@@ -48,7 +58,14 @@ def cmd_diff(args) -> int:
     reasons = diff.explain(normalize(_load(args.previous), args.model), normalize(_load(args.next), args.model))
     lines = [f"{r.code}: {r.message}" + (f" ({r.location})" if r.location else "") for r in reasons]
     _emit([asdict(r) for r in reasons], args.json, lines)
-    return EXIT_OK if reasons and reasons[0].code == "prefix-identical" else EXIT_PROBLEM
+    ok = bool(reasons) and reasons[0].code == "prefix-identical"
+    if args.github:
+        for r in reasons:
+            where = f" ({r.location})" if r.location else ""
+            print(gh.annotation("notice" if ok else "error", f"{r.message}{where}", file=args.next, title=f"CacheCanary: {r.code}"))
+        gh.append_summary(f"### CacheCanary diff: `{args.previous}` → `{args.next}`\n\n" +
+                          gh.table(["reason", "location", "explanation"], [[r.code, r.location or "", r.message] for r in reasons]))
+    return EXIT_OK if ok else EXIT_PROBLEM
 
 
 def _probe_explanation(result: probe.ProbeResult, model: str) -> list[str]:
@@ -79,6 +96,13 @@ def cmd_probe(args) -> int:
     if not result.passed:
         lines.append("Run `cachecanary lint` on the same request to find the likely cause.")
     _emit(data, args.json, lines)
+    if args.github:
+        if not result.passed:
+            print(gh.annotation("error", " ".join(lines[3:]) or status, file=args.request, title="CacheCanary: cache not read on 2nd call"))
+        rows = [[name, u["uncached_input"], u["cache_read"], u["cache_write"]] if u else [name, "?", "?", "?"]
+                for name, u in (("1st call", data["first"]), ("2nd call", data["second"]))]
+        gh.append_summary(f"### CacheCanary probe: `{args.request}` on `{args.model}` — {'PASS ✅' if result.passed else 'FAIL ❌'}\n\n"
+                          + gh.table(["call", "uncached", "cache read", "cache write"], rows))
     return EXIT_OK if result.passed else EXIT_PROBLEM
 
 
@@ -107,6 +131,18 @@ def cmd_logs(args) -> int:
     if stats.bad_lines:
         lines.append(f"Skipped {stats.bad_lines} unreadable line(s).")
     _emit(data, args.json, lines or ["No invocation log records found."])
+    if args.github:
+        rows = []
+        for key, d in data.items():
+            below = args.min_hit is not None and d["calls"] - d["unparsed"] > 0 and d["hit_ratio"] < args.min_hit
+            if below:
+                print(gh.annotation("error", f"{key}: cache hit rate {d['hit_ratio']:.0%} is below {args.min_hit:.0%}",
+                                    title="CacheCanary: low cache hit rate"))
+            rows.append([key, d["calls"], f"{d['hit_ratio']:.0%}", d["cache_read"], d["cache_write"], d["uncached_input"],
+                         d["unparsed"], "❌" if below else ""])
+        gh.append_summary("### CacheCanary logs\n\n" + (gh.table(
+            ["group", "calls", "hit rate", "read", "write", "uncached", "unparsed", "below threshold"], rows)
+            if rows else "No invocation log records found."))
     return EXIT_PROBLEM if failing else EXIT_OK
 
 
@@ -120,6 +156,8 @@ def _unit(value: str) -> float:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cachecanary", description="CacheCanary: catch silent prompt-cache breakage for Claude on Amazon Bedrock.")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument("--github", action="store_true",
+                        help="also emit GitHub Actions annotations and a job summary (used by the GitHub Action)")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("lint", help="static checks on one request")
@@ -154,6 +192,8 @@ def main(argv: list[str] | None = None) -> int:
         return args.func(args)
     except (InputError, RequestError, probe.ProbeError) as exc:
         print(f"cachecanary: error: {exc}", file=sys.stderr)
+        if getattr(args, "github", False):
+            print(gh.annotation("error", str(exc), title="CacheCanary could not run"))
         return EXIT_ERROR
 
 

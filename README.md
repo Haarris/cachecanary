@@ -22,12 +22,26 @@ Exit codes: `0` ok, `1` caching problem found, `2` could not run (bad input, AWS
 
 Requests can be Converse-shaped (`system`/`toolConfig`/`cachePoint`) or InvokeModel Claude bodies (`anthropic_version`, `cache_control`). Add `--json` before the command for machine-readable output.
 
-## CI example (GitHub Actions)
+## GitHub Action
+Findings show up as annotations on the pull request and as a table in the job summary.
+
 ```yaml
-- run: pip install "cachecanary[aws]"
-- run: cachecanary lint tests/fixtures/agent_request.json
-- run: cachecanary probe tests/fixtures/agent_request.json --model us.anthropic.claude-sonnet-4-6
+- uses: actions/checkout@v4
+
+# No AWS needed: static checks on a recorded request.
+- uses: Haarris/cachecanary@v0
+  with:
+    command: lint
+    args: tests/fixtures/agent_request.json --model us.anthropic.claude-sonnet-4-6
+
+# Live check against Bedrock (configure AWS credentials first, e.g. aws-actions/configure-aws-credentials with OIDC).
+- uses: Haarris/cachecanary@v0
+  with:
+    command: probe
+    args: tests/fixtures/agent_request.json --model us.anthropic.claude-sonnet-4-6 --region us-west-2
 ```
+
+`command` is one of `lint`, `diff`, `probe`, `logs`; `args` are the same arguments as the CLI (space-separated; paths with spaces are not supported). Outside the Action, add `--github` to the CLI to get the same annotations.
 
 ## Notes
 - Token counts in `lint` are estimates (~4 chars/token); they catch prefixes far below a minimum.

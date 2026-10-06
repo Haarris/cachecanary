@@ -1,0 +1,45 @@
+name: CacheCanary
+description: Catch silent Claude prompt-cache breakage on Amazon Bedrock before it reaches your bill.
+author: Haris Farooq
+branding:
+  icon: alert-triangle
+  color: yellow
+
+inputs:
+  command:
+    description: "One of: lint, diff, probe, logs"
+    required: true
+  args:
+    description: >
+      Arguments for the command, space-separated (paths with spaces are not supported),
+      e.g. "tests/fixtures/agent_request.json --model us.anthropic.claude-sonnet-4-6".
+    required: true
+  python-version:
+    description: Python used to run CacheCanary.
+    required: false
+    default: "3.12"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install CacheCanary
+      shell: bash
+      run: python -m pip install --quiet --disable-pip-version-check "$GITHUB_ACTION_PATH[aws]"
+
+    - name: Run CacheCanary
+      shell: bash
+      env:
+        # Passed via env (not inlined into the script) so input text can never be executed as shell.
+        CC_COMMAND: ${{ inputs.command }}
+        CC_ARGS: ${{ inputs.args }}
+      run: |
+        case "$CC_COMMAND" in
+          lint|diff|probe|logs) ;;
+          *) echo "::error title=CacheCanary::unknown command '$CC_COMMAND' (use lint, diff, probe or logs)"; exit 2 ;;
+        esac
+        read -r -a CC_ARGV <<< "$CC_ARGS"
+        cachecanary --github "$CC_COMMAND" "${CC_ARGV[@]}"
