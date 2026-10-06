@@ -18,6 +18,13 @@ DYNAMIC_PATTERNS = {
 # Conversation blocks after the last checkpoint before we suggest caching the history too.
 MIN_UNCACHED_TAIL = 4
 
+# Messages after the one holding the last checkpoint before it counts as stuck. Two is normal
+# (the previous request's end plus the newest message); three means a whole round of the agent
+# loop went by without the checkpoint moving, as in cline/cline#13738.
+STUCK_AFTER_MESSAGES = 3
+_TOOL_BLOCK = re.compile(r'"(toolUse|toolResult|tool_use|tool_result)"')
+_MESSAGE_INDEX = re.compile(r"^messages\[(\d+)\]")
+
 # Token estimates are approximate: live Bedrock runs (Oct 2026) counted ~11% MORE tokens than
 # estimate_tokens() for English prompts. Only call a prefix "too short" when it is clearly below
 # the minimum; inside the uncertainty band, warn and point to `probe` for a definitive answer.
@@ -65,7 +72,16 @@ def lint(req: NormalizedRequest) -> list[Finding]:
 
     for loc in req.orphan_checkpoints:
         findings.append(Finding(
-            "orphan-checkpoint", "warn", "Cache checkpoint with no content before it; it caches nothing.", loc,
+            "orphan-checkpoint", "error",
+            "Cache point with nothing before it in the same list (this message, system or tools). Bedrock "
+            "rejects the request: \"There is nothing available to cache.\" Put it after a content block.", loc,
+        ))
+    for loc in req.nested_checkpoints:
+        findings.append(Finding(
+            "nested-checkpoint", "error",
+            "cachePoint inside a toolResult's content. boto3 refuses to send it, and over plain HTTP Bedrock "
+            "accepts the request but caches nothing for it. Put the cachePoint after the toolResult, as its "
+            "own item in the message content.", loc,
         ))
 
     if req.system_is_string and not any(req.blocks[i].section in ("tools", "system") for i in cps):
@@ -172,4 +188,22 @@ def lint(req: NormalizedRequest) -> list[Finding]:
             req.blocks[last].location,
         ))
 
+    if req.blocks[last].section == "messages":
+        after = req.blocks[last + 1:]
+        cp_message = _message_index(req.blocks[last].location)
+        later = {_message_index(b.location) for b in after} - {cp_message}
+        if len(later) >= STUCK_AFTER_MESSAGES and any(_TOOL_BLOCK.search(b.content) for b in after):
+            findings.append(Finding(
+                "stale-checkpoint", "warn",
+                f"The last cache point is {len(later)} messages back, before {len(after)} blocks of tool calls "
+                "and results. Those are paid at full price on every call. Put the cache point on the last "
+                "block of the newest message, whatever its role.",
+                req.blocks[last].location,
+            ))
+
     return findings
+
+
+def _message_index(location: str) -> int | None:
+    match = _MESSAGE_INDEX.match(location)
+    return int(match.group(1)) if match else None

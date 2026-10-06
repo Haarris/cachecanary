@@ -106,6 +106,7 @@ system-changed: The system prompt changed inside the cached prefix (look for dat
   <li>You switched to a new model ID or an inference profile (an AWS name that points to a model), and your library doesn't recognise it, so it stops asking for caching.</li>
   <li>A small edit put today's date, a request ID or the user's name into the system prompt.</li>
   <li>Your tools are listed in a different order on each request.</li>
+  <li>Thinking or effort settings changed between two calls. On Bedrock that throws away the whole cache, system prompt included.</li>
   <li>An agent ran a dozen tools at once. Bedrock only searches back about 20 pieces of the conversation (messages, tool calls and tool results) for the cached part, so it can lose track of it.</li>
 </ul>
 <p>Anthropic added cache diagnostics to its own API, so you can see why a request missed. They don't cover Bedrock. That's the gap CacheCanary fills.</p>

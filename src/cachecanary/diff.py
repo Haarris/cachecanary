@@ -4,6 +4,7 @@ This rebuilds, for Bedrock, what Anthropic's cache diagnostics reports on the Cl
 compare consecutive requests and name the first thing that changed inside the cached prefix.
 """
 
+import json
 from dataclasses import dataclass
 
 from cachecanary.models import MAX_BLOCKS_ADDED
@@ -31,6 +32,31 @@ def explain(a: NormalizedRequest, b: NormalizedRequest) -> list[MissReason]:
     if (a.model_id or "") != (b.model_id or ""):
         reasons.append(MissReason("model-changed", f"Model changed from {a.model_id} to {b.model_id}. Caches are per model."))
         return reasons
+
+    # Verified live on Bedrock (Oct 2026): either change makes the next call read nothing from the
+    # cache, not even the system prompt, on both Converse and InvokeModel.
+    if a.thinking != b.thinking:
+        reasons.append(MissReason(
+            "thinking-changed",
+            f"Thinking settings changed ({_thinking_label(a.thinking)} -> {_thinking_label(b.thinking)}). On Bedrock "
+            "this throws away the whole cache, system prompt included. Keep thinking settings fixed within a session.",
+        ))
+        return reasons
+    if a.effort != b.effort:
+        reasons.append(MissReason(
+            "effort-changed",
+            f"Effort changed ({a.effort} -> {b.effort}; no setting means high). Each effort level has its own "
+            "cache on Bedrock, so this call reads nothing from it. Keep effort fixed within a session.",
+        ))
+        return reasons
+    # Bedrock adds a different tool instruction for auto/none than for any/tool, so the conversation
+    # part is written again while tools and system are still read (verified live, Oct 2026).
+    if a.tool_choice and b.tool_choice and a.tool_choice != b.tool_choice:
+        reasons.append(MissReason(
+            "tool-choice-changed",
+            f"Tool choice switched between auto/none and any/tool ({a.tool_choice} -> {b.tool_choice}). Bedrock "
+            "then writes the conversation part of the cache again; tools and system are still read.",
+        ))
 
     a_cps = a.checkpoint_indexes
     if not a_cps:
@@ -78,7 +104,36 @@ def explain(a: NormalizedRequest, b: NormalizedRequest) -> list[MissReason]:
             "The cached prefix is identical. If B still missed, the entry likely expired (TTL elapsed between calls) "
             "or cross-region inference routed to a Region without the entry.",
         ))
+        # Not a miss, but money: the conversation grew and the cache point stayed where it was.
+        added = len(b.blocks) - 1 - a_last
+        if (b.checkpoint_indexes[-1] == a_last and a.blocks[a_last].section == "messages"
+                and added >= STUCK_MIN_ADDED):
+            reasons.append(MissReason(
+                "checkpoint-not-moved",
+                f"The cached part was read, but the last cache point didn't move while {added} new blocks were added "
+                "after it. Those are paid at full price on every call. Put the cache point at the end of the "
+                "newest message.",
+                b.blocks[a_last].location,
+            ))
     return reasons
+
+
+# New blocks after an unmoved conversation checkpoint before it is worth pointing out
+# (one agent round trip is at least a tool call and its result).
+STUCK_MIN_ADDED = 2
+
+
+def _thinking_label(key: str | None) -> str:
+    if key is None:
+        return "off"
+    try:
+        cfg = json.loads(key)
+    except ValueError:
+        return key
+    if not isinstance(cfg, dict):
+        return key
+    budget = cfg.get("budget_tokens")
+    return str(cfg.get("type", "on")) + (f", budget {budget}" if budget is not None else "")
 
 
 def _classify_change(a: NormalizedRequest, b: NormalizedRequest, i: int) -> MissReason:

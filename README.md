@@ -64,6 +64,10 @@ Exit code 2 means it couldn't run at all (bad file, no model access, no AWS cred
 - A switch between the Converse and InvokeModel APIs, which builds a different prompt.
 - More than 4 checkpoints, an unknown cache lifetime (TTL), or a 1-hour checkpoint after a 5-minute one.
 - A plain-string `system` field in InvokeModel, which can't carry `cache_control`.
+- A cache point with nothing before it in its own list (a message, `system` or `tools`), for example at the start of a message. Bedrock rejects the request: "There is nothing available to cache."
+- A Converse `cachePoint` inside a `toolResult`'s content. boto3 refuses to send it; over plain HTTP, as gateways send it, Bedrock accepts the request and caches nothing. It belongs after the `toolResult`.
+- A conversation cache point stuck several messages back in an agent loop, so every new tool call and result is paid at full price (`lint`), or one that didn't move while new blocks were added (`diff`).
+- Between two requests (`diff`): thinking settings changed or a different effort level, which on Bedrock throws away the whole cache including the system prompt; or tool choice switched between auto/none and any/tool, which rewrites the conversation part. Temperature and max tokens don't matter.
 
 ## GitHub Action
 
@@ -116,7 +120,7 @@ It reads S3 deliveries, CloudWatch exports and `aws logs filter-log-events` outp
 
 ## How it's tested
 
-The checks follow AWS's documented prompt-caching rules. The core behaviour was verified against live Amazon Bedrock: Converse and InvokeModel, streaming, both cache lifetimes (5 minutes and 1 hour), model minimums, prompt changes and the exact lookback limit (21 added blocks hit, 22 miss). Every check also has unit tests. The log reader is tested against real Bedrock invocation logs (redacted copies are in [tests/fixtures](https://github.com/Haarris/cachecanary/tree/main/tests/fixtures)).
+The checks follow AWS's documented prompt-caching rules. The core behaviour was verified against live Amazon Bedrock: Converse and InvokeModel, streaming, both cache lifetimes (5 minutes and 1 hour), model minimums, prompt changes and the exact lookback limit (21 added blocks hit, 22 miss). Every check added in 0.3 was measured live first, and `scripts/live_v03_checks.py` re-runs those cases against Bedrock and compares CacheCanary's verdict with what Bedrock did (15 of 15 agreed in October 2026). Every check also has unit tests. The log reader is tested against real Bedrock invocation logs (redacted copies are in [tests/fixtures](https://github.com/Haarris/cachecanary/tree/main/tests/fixtures)).
 
 To run the live checks yourself, use an AWS Region without production traffic: `python scripts/live_test.py --region <region>`.
 
