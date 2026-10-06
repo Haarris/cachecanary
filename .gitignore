@@ -1,6 +1,7 @@
 *.egg-info/
 .pytest_cache/
 .venv/
+.wrangler/
 __pycache__/
 build/
 dist/

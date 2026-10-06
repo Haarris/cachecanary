@@ -43,3 +43,13 @@ def test_page_basics():
     assert "mailto:hello@cachecanary.com" in INDEX and "https://github.com/Haarris/cachecanary" in INDEX
     assert 'id="copy"' in INDEX and 'id="install-cmd"' in INDEX
     assert "—" not in INDEX  # writing style: no em dashes
+
+
+def test_wrangler_config_serves_site_with_404_page():
+    import json
+    import re as _re
+    raw = (SITE.parent / "wrangler.jsonc").read_text()
+    cfg = json.loads(_re.sub(r"^\s*//.*$", "", raw, flags=_re.M))  # strip // comment lines
+    assert cfg["name"] == "cachecanary"
+    assert cfg["assets"] == {"directory": "./site", "not_found_handling": "404-page"}
+    assert "main" not in cfg  # static assets only, no Worker script

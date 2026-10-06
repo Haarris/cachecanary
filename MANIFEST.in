@@ -6,3 +6,4 @@ graft site
 graft tests
 recursive-include .github *.yml
 global-exclude __pycache__ *.py[cod] .DS_Store
+include wrangler.jsonc
