@@ -4,11 +4,32 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cachecanary"
-version = "0.1.0"
+dynamic = ["version"]
 description = "CacheCanary: know the moment your Claude prompt cache breaks on Amazon Bedrock, not when the bill arrives."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
+authors = [{ name = "Haris Farooq", email = "harisf98@gmail.com" }]
+keywords = ["claude", "anthropic", "amazon-bedrock", "bedrock", "prompt-caching", "llm", "cost", "observability", "ci"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: System :: Monitoring",
+]
+
+[project.urls]
+Homepage = "https://github.com/Haarris/cachecanary"
+Source = "https://github.com/Haarris/cachecanary"
+Issues = "https://github.com/Haarris/cachecanary/issues"
 
 [project.optional-dependencies]
 aws = ["boto3[crt]>=1.34"]  # crt: needed for credentials from `aws login`
@@ -16,6 +37,9 @@ dev = ["pytest>=8", "pyyaml>=6"]
 
 [project.scripts]
 cachecanary = "cachecanary.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "cachecanary.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

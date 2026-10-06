@@ -15,7 +15,7 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
-from cachecanary import diff, lint, logs, probe
+from cachecanary import __version__, diff, lint, logs, probe
 from cachecanary import github as gh
 from cachecanary.request import RequestError, normalize
 
@@ -155,6 +155,7 @@ def _unit(value: str) -> float:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cachecanary", description="CacheCanary: catch silent prompt-cache breakage for Claude on Amazon Bedrock.")
+    parser.add_argument("--version", action="version", version=f"cachecanary {__version__}")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     parser.add_argument("--github", action="store_true",
                         help="also emit GitHub Actions annotations and a job summary (used by the GitHub Action)")

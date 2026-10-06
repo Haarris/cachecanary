@@ -73,3 +73,39 @@ def test_action_args_are_never_executed(tmp_path, payload):
     res = run_action("lint", payload, tmp_path)
     assert not marker.exists(), f"shell injection via args: {payload}"
     assert res.returncode != 0  # extra tokens are rejected by the CLI as unknown arguments
+
+
+# --- release workflow ------------------------------------------------------
+
+PUBLISH = yaml.safe_load((ROOT / ".github" / "workflows" / "publish.yml").read_text())
+
+
+def test_publish_workflow_is_least_privilege():
+    on = PUBLISH[True] if True in PUBLISH else PUBLISH["on"]  # YAML 1.1 parses `on:` as True
+    assert on["push"]["tags"] == ["v*.*.*"] and "workflow_dispatch" in on
+    assert PUBLISH["permissions"] == {"contents": "read"}
+    jobs = PUBLISH["jobs"]
+    assert "permissions" not in jobs["build"]  # build never gets the OIDC token
+    for name, env, url in (("publish-pypi", "pypi", "https://pypi.org/p/cachecanary"),
+                           ("publish-testpypi", "testpypi", "https://test.pypi.org/p/cachecanary")):
+        job = jobs[name]
+        assert job["permissions"] == {"id-token": "write"} and job["needs"] == "build"
+        assert job["environment"] == {"name": env, "url": url}
+        assert any(str(s.get("uses", "")).startswith("pypa/gh-action-pypi-publish@") for s in job["steps"])
+    assert jobs["publish-testpypi"]["steps"][-1]["with"]["repository-url"] == "https://test.pypi.org/legacy/"
+    assert "refs/tags/v" in jobs["publish-pypi"]["if"]
+
+
+def test_version_is_single_sourced():
+    import cachecanary
+    text = (ROOT / "pyproject.toml").read_text()
+    assert 'dynamic = ["version"]' in text and 'attr = "cachecanary.__version__"' in text
+    assert cachecanary.__version__.count(".") == 2
+
+
+def test_cli_version_flag(capsys):
+    import cachecanary
+    from cachecanary import cli
+    with pytest.raises(SystemExit) as info:
+        cli.main(["--version"])
+    assert info.value.code == 0 and cachecanary.__version__ in capsys.readouterr().out
