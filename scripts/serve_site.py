@@ -1,5 +1,7 @@
-"""Usage: python3 scripts/serve_site.py site 8765 headers   (or "plain" without _headers)
-"""Serve site/ like Cloudflare Pages: apply _headers, serve 404.html for missing paths."""
+"""Serve site/ like Cloudflare Pages: apply _headers, serve 404.html for missing paths.
+
+Usage: python3 scripts/serve_site.py site 8765 headers   (or "plain" to skip _headers)
+"""
 import http.server, os, sys
 from pathlib import Path
 

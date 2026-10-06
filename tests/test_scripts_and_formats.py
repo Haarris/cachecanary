@@ -231,3 +231,15 @@ def test_real_logs_group_both_apis_under_one_model():
     groups = logs.aggregate(list(logs.iter_records(path)))
     # Converse logs the short ID, InvokeModel logs the profile ARN; both must land in one group.
     assert list(groups) == ["us.anthropic.claude-sonnet-4-6"] and groups["us.anthropic.claude-sonnet-4-6"].calls == 8
+
+
+def test_all_scripts_compile():
+    import py_compile
+    import shutil
+    import subprocess
+    for path in sorted((ROOT / "scripts").glob("*.py")):
+        py_compile.compile(str(path), doraise=True)
+    node = shutil.which("node")
+    for path in sorted((ROOT / "scripts").glob("*.mjs")):
+        if node:
+            assert subprocess.run([node, "--check", str(path)], capture_output=True).returncode == 0, path
