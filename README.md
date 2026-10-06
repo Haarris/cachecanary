@@ -59,8 +59,8 @@ Exit code 2 means it couldn't run at all (bad file, no model access, no AWS cred
 - Dates, times, UUIDs or user-specific text before the cache checkpoint.
 - A cached prefix shorter than the model's minimum (512 to 4,096 tokens depending on the model).
 - Tools listed in a different order, or a tool definition that changed. Tools come first, so this throws away the whole cache.
-- More than about 20 new content blocks since the last checkpoint, which is common after many parallel tool calls. Bedrock only looks back that far.
-- Model IDs or application inference profile ARNs that your library may not recognize, so it quietly stops sending cache markers.
+- More than 21 new content blocks between the old checkpoint and the new one, which is common after many parallel tool calls. Bedrock only looks back that far: measured live, 21 added blocks still hit and 22 always missed (`scripts/live_lookback_boundary.py`).
+- Model IDs or application inference profile ARNs that your library may not recognize, so it quietly stops sending cache markers. Legacy models (Sonnet 4, Opus 4 and 4.1, 3.5 Haiku) are checked against Anthropic's documented minimums, since AWS's caching table doesn't list them.
 - A switch between the Converse and InvokeModel APIs, which builds a different prompt.
 - More than 4 checkpoints, an unknown cache lifetime (TTL), or a 1-hour checkpoint after a 5-minute one.
 - A plain-string `system` field in InvokeModel, which can't carry `cache_control`.
@@ -116,7 +116,7 @@ It reads S3 deliveries, CloudWatch exports and `aws logs filter-log-events` outp
 
 ## How it's tested
 
-The checks follow AWS's documented prompt-caching rules. The core behaviour was verified against live Amazon Bedrock: Converse and InvokeModel, streaming, both cache lifetimes (5 minutes and 1 hour), model minimums, prompt changes and the 20-block lookback. Every check also has unit tests. The log reader is tested against real Bedrock invocation logs (redacted copies are in [tests/fixtures](https://github.com/Haarris/cachecanary/tree/main/tests/fixtures)).
+The checks follow AWS's documented prompt-caching rules. The core behaviour was verified against live Amazon Bedrock: Converse and InvokeModel, streaming, both cache lifetimes (5 minutes and 1 hour), model minimums, prompt changes and the exact lookback limit (21 added blocks hit, 22 miss). Every check also has unit tests. The log reader is tested against real Bedrock invocation logs (redacted copies are in [tests/fixtures](https://github.com/Haarris/cachecanary/tree/main/tests/fixtures)).
 
 To run the live checks yourself, use an AWS Region without production traffic: `python scripts/live_test.py --region <region>`.
 

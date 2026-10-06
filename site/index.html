@@ -113,7 +113,7 @@ system-changed: The system prompt changed inside the cached prefix (look for dat
 <h2>Built on how Bedrock actually behaves</h2>
 <p>The checks follow AWS's documented caching rules. The core behaviour was verified against live Amazon Bedrock, including streaming responses, both cache lifetimes (5 minutes and 1 hour), and each model's minimum prompt size. The log reader is tested against real Bedrock invocation logs.</p>
 <div class="facts">
-  <div class="fact"><b>17</b><span>Claude models with their cache rules built in, including Sonnet 4.6, Haiku 4.5 and Opus 5.5</span></div>
+  <div class="fact"><b>21</b><span>Claude models with their cache rules built in, including Sonnet 4.6, Haiku 4.5 and Opus 5.5</span></div>
   <div class="fact"><b>Both APIs</b><span>Converse and InvokeModel, streaming or not</span></div>
   <div class="fact"><b>No AWS needed</b><span>to check a saved request. lint and diff run offline in about 30 ms.</span></div>
 </div>

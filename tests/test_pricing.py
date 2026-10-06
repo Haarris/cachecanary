@@ -259,3 +259,69 @@ def test_by_model_split_inside_a_principal_group(tmp_path):
     path = _write(tmp_path / "l.jsonl", [_rec(1, 0, 0), _rec(2, 0, 0, model=SONNET_GLOBAL)])
     groups = logs.aggregate(logs.iter_records(path), by="principal")
     assert {m: u.cache_read for m, u in groups["arn:role/a"].by_model.items()} == {SONNET_US: 1, SONNET_GLOBAL: 2}
+
+
+# --- legacy models and stricter model matching (0.2.1) ----------------------
+
+from cachecanary import lint as lint_mod  # noqa: E402
+from cachecanary.models import lookup  # noqa: E402
+from cachecanary.request import normalize  # noqa: E402
+
+
+@pytest.mark.parametrize("model_id,key", [
+    ("us.anthropic.claude-sonnet-4-20250514-v1:0", "claude-sonnet-4"),
+    ("global.anthropic.claude-sonnet-4-20250514-v1:0", "claude-sonnet-4"),
+    ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", "claude-sonnet-4-5"),
+    ("us.anthropic.claude-sonnet-4-6", "claude-sonnet-4-6"),
+    ("us.anthropic.claude-opus-4-1-20250805-v1:0", "claude-opus-4-1"),
+    ("anthropic.claude-opus-4-20250514-v1:0", "claude-opus-4"),
+    ("anthropic.claude-opus-4-6-v1", "claude-opus-4-6"),
+    ("us.anthropic.claude-3-5-haiku-20241022-v1:0", "claude-3-5-haiku"),
+    ("anthropic.claude-3-5-sonnet-20241022-v2:0", "claude-3-5-sonnet"),
+    ("us.anthropic.claude-opus-5-5", "claude-opus-5-5"),
+    ("us.anthropic.claude-opus-5", "claude-opus-5"),
+    ("arn:aws:bedrock:us-west-2:1:inference-profile/us.anthropic.claude-sonnet-4-6", "claude-sonnet-4-6"),
+    ("us.anthropic.claude-opus-4-9", None),          # a future model must not borrow Opus 4's rules
+    ("us.anthropic.claude-sonnet-4-7-20270101-v1:0", None),
+    ("us.anthropic.claude-opus-5-9", None),
+])
+def test_lookup_matches_whole_model_names(model_id, key):
+    assert lookup(model_id)[0] == key
+
+
+def _lint_codes(model, ttl=None):
+    cp = {"cachePoint": {"type": "default", **({"ttl": ttl} if ttl else {})}}
+    req = {"system": [{"text": "Rule. " * 900}, cp], "messages": [{"role": "user", "content": [{"text": "q"}]}]}
+    return {f.rule: f for f in lint_mod.lint(normalize(req, model))}
+
+
+def test_legacy_model_note_instead_of_unknown():
+    codes = _lint_codes("us.anthropic.claude-sonnet-4-20250514-v1:0")
+    assert "legacy-model" in codes and "unknown-model" not in codes
+    assert codes["legacy-model"].severity == "warn" and "1024-token minimum" in codes["legacy-model"].message
+
+
+def test_legacy_min_size_is_checked():
+    small = {"system": [{"text": "Rule one."}, {"cachePoint": {"type": "default"}}],
+             "messages": [{"role": "user", "content": [{"text": "q"}]}]}
+    rules = {f.rule for f in lint_mod.lint(normalize(small, "us.anthropic.claude-3-5-haiku-20241022-v1:0"))}
+    assert "prefix-too-short" in rules
+
+
+def test_1h_on_legacy_is_a_warning_and_on_3_7_an_error():
+    assert _lint_codes("us.anthropic.claude-opus-4-1-20250805-v1:0", "1h")["ttl-unverified"].severity == "warn"
+    assert _lint_codes("us.anthropic.claude-3-7-sonnet-20250219-v1:0", "1h")["ttl-unsupported"].severity == "error"
+    assert "ttl-unverified" not in _lint_codes("us.anthropic.claude-sonnet-4-6", "1h")
+
+
+# AWS Price List rows (us-east-1, on-demand, 2026-10-06): legacy models, same price on every endpoint.
+@pytest.mark.parametrize("model,expected", [
+    ("us.anthropic.claude-sonnet-4-20250514-v1:0", (3, 0.3, 3.75)),
+    ("global.anthropic.claude-sonnet-4-20250514-v1:0", (3, 0.3, 3.75)),
+    ("us.anthropic.claude-opus-4-1-20250805-v1:0", (15, 1.5, 18.75)),
+    ("anthropic.claude-opus-4-20250514-v1:0", (15, 1.5, 18.75)),
+    ("us.anthropic.claude-3-5-haiku-20241022-v1:0", (0.8, 0.08, 1.0)),
+])
+def test_legacy_prices_match_aws_with_no_regional_premium(model, expected):
+    r = pricing.rates_for(model).rates
+    assert (r.input, r.cache_read, r.cache_write_5m) == pytest.approx(expected)

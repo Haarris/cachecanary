@@ -6,7 +6,7 @@ compare consecutive requests and name the first thing that changed inside the ca
 
 from dataclasses import dataclass
 
-from cachecanary.models import LOOKBACK_BLOCKS
+from cachecanary.models import MAX_BLOCKS_ADDED
 from cachecanary.request import NormalizedRequest
 
 
@@ -59,14 +59,17 @@ def explain(a: NormalizedRequest, b: NormalizedRequest) -> list[MissReason]:
     if a_ttls and b_ttls and a_ttls[0] != b_ttls[0]:
         reasons.append(MissReason("ttl-changed", f"Checkpoint TTL changed ({a_ttls[0]} -> {b_ttls[0]}); entries are keyed by TTL."))
 
-    b_cps = b.checkpoint_indexes
-    if b_cps and b_cps[-1] - a_last > LOOKBACK_BLOCKS and not any(a_last <= i < b_cps[-1] for i in b_cps[:-1]):
+    # B reads A's entry only if one of B's checkpoints sits at A's last checkpoint or within reach after it.
+    later = [i for i in b.checkpoint_indexes if i >= a_last]
+    if later and later[0] - a_last > MAX_BLOCKS_ADDED:
+        added = later[0] - a_last
         reasons.append(MissReason(
             "lookback-exceeded",
-            f"{b_cps[-1] - a_last} blocks were added between the previous checkpoint and the new one. Bedrock only "
-            f"looks back ~{LOOKBACK_BLOCKS} blocks, so it cannot find the earlier cache entry. Add an intermediate "
-            "checkpoint (common after many parallel tool calls).",
-            b.blocks[b_cps[-1]].location,
+            f"{added} blocks were added between the previous checkpoint and the next one. Bedrock only finds an "
+            f"earlier cache entry up to {MAX_BLOCKS_ADDED} blocks back ({MAX_BLOCKS_ADDED} added still hits, "
+            f"{MAX_BLOCKS_ADDED + 1} misses), so this call writes the cache again. Add a checkpoint in between "
+            "(common after many parallel tool calls).",
+            b.blocks[later[0]].location,
         ))
 
     if not reasons:

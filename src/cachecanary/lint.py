@@ -50,6 +50,12 @@ def lint(req: NormalizedRequest) -> list[Finding]:
             "decide whether to send cache checkpoints and silently skip this case. Verify the "
             "response shows cache reads/writes. Minimum-size checks were skipped (model unknown).",
         ))
+    elif limits and limits.legacy:
+        findings.append(Finding(
+            "legacy-model", "warn",
+            f"{key} is a legacy model on Bedrock. AWS's prompt-caching table doesn't list it, so the "
+            f"{limits.min_tokens}-token minimum used here is Anthropic's documented value. Verify cache usage in responses.",
+        ))
     elif key is None:
         findings.append(Finding(
             "unknown-model", "warn",
@@ -130,9 +136,15 @@ def lint(req: NormalizedRequest) -> list[Finding]:
         findings.append(Finding(
             "ttl-invalid", "error", f"Unsupported TTL value(s) {unknown_ttls}; only '5m' and '1h' exist.",
         ))
-    if limits and not limits.supports_1h and "1h" in ttls:
+    if limits and limits.supports_1h is False and "1h" in ttls:
         findings.append(Finding(
             "ttl-unsupported", "error", f"{key} only supports the 5-minute TTL; 'ttl: 1h' can raise a ValidationException.",
+        ))
+    elif limits and limits.supports_1h is None and "1h" in ttls:
+        findings.append(Finding(
+            "ttl-unverified", "warn",
+            f"Bedrock doesn't document the 1-hour TTL for {key} (no 1-hour cache price is listed); "
+            "'ttl: 1h' may be rejected. Use the 5-minute default or check with `cachecanary probe`.",
         ))
     if "5m" in ttls and "1h" in ttls and ttls.index("5m") < max(i for i, t in enumerate(ttls) if t == "1h"):
         findings.append(Finding(

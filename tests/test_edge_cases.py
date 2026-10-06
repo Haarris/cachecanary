@@ -407,3 +407,43 @@ def test_live_calibration_case_is_not_a_false_error():
     haiku = {f.rule for f in lint.lint(normalize(req, "us.anthropic.claude-haiku-4-5-20251001-v1:0"))}
     assert not {"prefix-too-short", "prefix-near-minimum"} & sonnet
     assert "prefix-too-short" in haiku
+
+
+# --- lookback boundary, measured on live Bedrock (scripts/live_lookback_boundary.py) ----------
+
+def _lookback_pair(n_calls, with_text=False, b_extra_cp_after=None):
+    """A caches one user turn; B adds an assistant turn with n tool calls and the results.
+    b_extra_cp_after puts an extra checkpoint after that many tool calls in the assistant turn."""
+    a = {"messages": [{"role": "user", "content": [{"text": "start " * 50}, CP]}]}
+    calls = [{"toolUse": {"toolUseId": f"t{i}", "name": "x", "input": {}}} for i in range(n_calls)]
+    if b_extra_cp_after is not None:
+        calls.insert(b_extra_cp_after, CP)
+    results = [{"toolResult": {"toolUseId": f"t{i}", "content": [{"text": "ok"}]}} for i in range(n_calls)]
+    b = {"messages": [{"role": "user", "content": [{"text": "start " * 50}]},
+                      {"role": "assistant", "content": ([{"text": "checking"}] if with_text else []) + calls},
+                      {"role": "user", "content": results + [CP]}]}
+    return normalize(a, "us.anthropic.claude-sonnet-4-6"), normalize(b, "us.anthropic.claude-sonnet-4-6")
+
+
+@pytest.mark.parametrize("n_calls,with_text,added,miss", [
+    (9, True, 19, False), (10, False, 20, False), (10, True, 21, False),  # live: hit
+    (11, False, 22, True), (11, True, 23, True), (12, False, 24, True),   # live: miss
+])
+def test_lookback_boundary_matches_live_bedrock(n_calls, with_text, added, miss):
+    a, b = _lookback_pair(n_calls, with_text)
+    assert b.checkpoint_indexes[-1] - a.checkpoint_indexes[-1] == added
+    reasons = {r.code: r for r in diff.explain(a, b)}
+    assert ("lookback-exceeded" in reasons) is miss
+    if miss:
+        assert reasons["lookback-exceeded"].message.startswith(f"{added} blocks were added")
+
+
+def test_extra_checkpoint_within_reach_avoids_the_miss():
+    a, b = _lookback_pair(15, b_extra_cp_after=5)  # a Converse cachePoint marks the block before it: 5 after A's
+    assert "lookback-exceeded" not in {r.code for r in diff.explain(a, b)}
+
+
+def test_extra_checkpoint_out_of_reach_does_not_help():
+    a, b = _lookback_pair(30, b_extra_cp_after=25)  # extra point 25 blocks after A's: also too far
+    reasons = {r.code: r for r in diff.explain(a, b)}
+    assert reasons["lookback-exceeded"].message.startswith("25 blocks were added")

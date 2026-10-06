@@ -5,8 +5,9 @@ Source: the AWS Price List file for AmazonBedrockFoundationModels (checked 2026-
 Global endpoints ('global.' model IDs) are billed at these prices; regional and geo cross-region
 endpoints ('us.', 'eu.', ... or a bare 'anthropic.' ID) cost 10% more for these models.
 
-Claude 3.x models are left out on purpose: their Bedrock prices depend on extended-access terms,
-so CacheCanary shows no dollars for them unless you pass --price.
+Legacy models (Sonnet 4, Opus 4 and 4.1, 3.5 Haiku) have one price on every endpoint, with no
+regional premium. Claude 3.7 Sonnet and 3.5 Sonnet are left out on purpose: their Bedrock prices
+depend on extended-access terms, so CacheCanary shows no dollars for them unless you pass --price.
 """
 
 from dataclasses import dataclass
@@ -51,7 +52,14 @@ GLOBAL_PRICES: dict[str, Rates] = {
     "claude-sonnet-4-6": _rates(3),
     "claude-sonnet-4-5": _rates(3),
     "claude-haiku-4-5": _rates(1),
+    "claude-sonnet-4": _rates(3),
+    "claude-opus-4-1": _rates(15),
+    "claude-opus-4": _rates(15),
+    "claude-3-5-haiku": _rates(0.8),
 }
+
+# Older models priced the same on global and regional endpoints (AWS price list).
+NO_REGIONAL_PREMIUM = {"claude-sonnet-4", "claude-opus-4-1", "claude-opus-4", "claude-3-5-haiku"}
 
 # Cache read price as a share of the input price, for --price on models CacheCanary can't price.
 DEFAULT_READ_MULTIPLIER = 0.1
@@ -77,7 +85,9 @@ def rates_for(model_id: str | None, custom_input_price: float | None = None) -> 
     if listed is None:
         return None
     is_global = (model_id or "").lower().startswith("global.")
-    return Priced(listed if is_global else listed.scaled(REGIONAL_PREMIUM), "list")
+    if is_global or key in NO_REGIONAL_PREMIUM:
+        return Priced(listed, "list")
+    return Priced(listed.scaled(REGIONAL_PREMIUM), "list")
 
 
 def input_cost(usage: Usage, rates: Rates) -> float:

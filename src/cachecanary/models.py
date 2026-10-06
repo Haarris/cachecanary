@@ -5,6 +5,7 @@ Keep this table current; new model IDs are the most common reason libraries
 silently stop sending cache checkpoints.
 """
 
+import re
 from dataclasses import dataclass
 
 
@@ -12,7 +13,8 @@ from dataclasses import dataclass
 class CacheLimits:
     min_tokens: int          # cumulative prefix tokens required before a checkpoint
     max_checkpoints: int
-    supports_1h: bool
+    supports_1h: bool | None  # None = not documented for Bedrock
+    legacy: bool = False      # Bedrock legacy model, not in AWS's prompt-caching table
 
 
 # Keyed by the base model name as it appears inside Bedrock model IDs / profile IDs.
@@ -34,22 +36,34 @@ CLAUDE_LIMITS: dict[str, CacheLimits] = {
     "claude-3-7-sonnet": CacheLimits(1024, 4, False),
     "claude-3-5-sonnet": CacheLimits(1024, 4, False),
     "claude-haiku-4-5": CacheLimits(4096, 4, True),
+    # Legacy on Bedrock: AWS's caching table doesn't list them and Bedrock refuses accounts that haven't
+    # used them in 30 days (checked live Oct 2026). Minimums are Anthropic's documented values; AWS's
+    # price list has cache read/write prices for them but no 1-hour write price.
+    "claude-sonnet-4": CacheLimits(1024, 4, None, legacy=True),
+    "claude-opus-4-1": CacheLimits(1024, 4, None, legacy=True),
+    "claude-opus-4": CacheLimits(1024, 4, None, legacy=True),
+    "claude-3-5-haiku": CacheLimits(2048, 4, None, legacy=True),
 }
 
 # Bedrock's automatic prefix check only looks back ~20 content blocks from a checkpoint.
 LOOKBACK_BLOCKS = 20
+# Measured on live Bedrock (Oct 2026, Sonnet 4.6, scripts/live_lookback_boundary.py, two runs per size):
+# a checkpoint still finds an earlier cache entry when at most 21 blocks were added after it (20 in
+# between plus the checkpoint's own block); 22 or more always missed. pydantic-ai#9404 saw the same.
+MAX_BLOCKS_ADDED = LOOKBACK_BLOCKS + 1
 
 
 def lookup(model_id: str | None) -> tuple[str | None, CacheLimits | None]:
     """Match a Bedrock model ID, cross-region profile ID or ARN to its limits.
 
-    Longest key wins so 'claude-opus-5-5' is not mistaken for 'claude-opus-5'.
+    The name must end where the model name ends (end of ID, a version suffix like '-v1:0', or a
+    date like '-20250514'), so 'claude-opus-4' never matches a newer 'claude-opus-4-9'.
     """
     if not model_id:
         return None, None
     lowered = model_id.lower()
     for key in sorted(CLAUDE_LIMITS, key=len, reverse=True):
-        if key in lowered:
+        if re.search(re.escape(key) + r"(?=$|[:/]|-v\d|-\d{8})", lowered):
             return key, CLAUDE_LIMITS[key]
     return None, None
 
