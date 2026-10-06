@@ -1,0 +1,500 @@
+[
+ {
+  "timestamp": "2026-10-06T07:55:04Z",
+  "accountId": "111122223333",
+  "region": "us-west-2",
+  "requestId": "00000000-0000-0000-0000-000000000000",
+  "operation": "Converse",
+  "modelId": "us.anthropic.claude-sonnet-4-6",
+  "input": {
+   "inputContentType": "application/json",
+   "inputTokenCount": 10
+  },
+  "output": {
+   "outputContentType": "application/json",
+   "outputBodyJson": {
+    "output": {
+     "message": {
+      "role": "assistant",
+      "content": [
+       {
+        "text": "OK"
+       }
+      ]
+     }
+    },
+    "stopReason": "max_tokens",
+    "metrics": {
+     "latencyMs": 1022
+    },
+    "usage": {
+     "inputTokens": 10,
+     "cacheReadInputTokens": 0,
+     "cacheWriteInputTokens": 2871,
+     "outputTokens": 5,
+     "totalTokens": 2886
+    }
+   },
+   "outputTokenCount": 5
+  },
+  "identity": {
+   "arn": "arn:aws:sts::111122223333:assumed-role/ExampleRole/example-user"
+  },
+  "inferenceRegion": "us-east-2",
+  "schemaType": "ModelInvocationLog",
+  "schemaVersion": "1.0"
+ },
+ {
+  "timestamp": "2026-10-06T07:55:12Z",
+  "accountId": "111122223333",
+  "region": "us-west-2",
+  "requestId": "00000000-0000-0000-0000-000000000001",
+  "operation": "ConverseStream",
+  "modelId": "us.anthropic.claude-sonnet-4-6",
+  "input": {
+   "inputContentType": "application/json",
+   "inputTokenCount": 10
+  },
+  "output": {
+   "outputContentType": "application/json",
+   "outputBodyJson": {
+    "output": {
+     "message": {
+      "role": "assistant",
+      "content": [
+       {
+        "text": "OK"
+       }
+      ]
+     }
+    },
+    "stopReason": "max_tokens",
+    "metrics": {
+     "latencyMs": 1111
+    },
+    "usage": {
+     "inputTokens": 10,
+     "cacheReadInputTokens": 2874,
+     "cacheWriteInputTokens": 0,
+     "outputTokens": 5,
+     "totalTokens": 2889
+    }
+   },
+   "outputTokenCount": 5
+  },
+  "identity": {
+   "arn": "arn:aws:sts::111122223333:assumed-role/ExampleRole/example-user"
+  },
+  "inferenceRegion": "us-east-2",
+  "schemaType": "ModelInvocationLog",
+  "schemaVersion": "1.0"
+ },
+ {
+  "timestamp": "2026-10-06T07:55:18Z",
+  "accountId": "111122223333",
+  "region": "us-west-2",
+  "requestId": "00000000-0000-0000-0000-000000000002",
+  "operation": "InvokeModel",
+  "modelId": "arn:aws:bedrock:us-west-2:111122223333:inference-profile/us.anthropic.claude-sonnet-4-6",
+  "input": {
+   "inputContentType": "application/json",
+   "inputTokenCount": 10
+  },
+  "output": {
+   "outputContentType": "application/json",
+   "outputBodyJson": {
+    "model": "claude-sonnet-4-6",
+    "id": "msg_redacted_2",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "OK"
+     }
+    ],
+    "stop_reason": "max_tokens",
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 10,
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 2874,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 0
+     },
+     "output_tokens": 5
+    }
+   },
+   "outputTokenCount": 5
+  },
+  "identity": {
+   "arn": "arn:aws:sts::111122223333:assumed-role/ExampleRole/example-user"
+  },
+  "inferenceRegion": "us-east-2",
+  "schemaType": "ModelInvocationLog",
+  "schemaVersion": "1.0"
+ },
+ {
+  "timestamp": "2026-10-06T07:55:07Z",
+  "accountId": "111122223333",
+  "region": "us-west-2",
+  "requestId": "00000000-0000-0000-0000-000000000003",
+  "operation": "Converse",
+  "modelId": "us.anthropic.claude-sonnet-4-6",
+  "input": {
+   "inputContentType": "application/json",
+   "inputTokenCount": 10
+  },
+  "output": {
+   "outputContentType": "application/json",
+   "outputBodyJson": {
+    "output": {
+     "message": {
+      "role": "assistant",
+      "content": [
+       {
+        "text": "OK"
+       }
+      ]
+     }
+    },
+    "stopReason": "max_tokens",
+    "metrics": {
+     "latencyMs": 951
+    },
+    "usage": {
+     "inputTokens": 10,
+     "cacheReadInputTokens": 2871,
+     "cacheWriteInputTokens": 0,
+     "outputTokens": 5,
+     "totalTokens": 2886
+    }
+   },
+   "outputTokenCount": 5
+  },
+  "identity": {
+   "arn": "arn:aws:sts::111122223333:assumed-role/ExampleRole/example-user"
+  },
+  "inferenceRegion": "us-east-2",
+  "schemaType": "ModelInvocationLog",
+  "schemaVersion": "1.0"
+ },
+ {
+  "timestamp": "2026-10-06T07:55:15Z",
+  "accountId": "111122223333",
+  "region": "us-west-2",
+  "requestId": "00000000-0000-0000-0000-000000000004",
+  "operation": "InvokeModel",
+  "modelId": "arn:aws:bedrock:us-west-2:111122223333:inference-profile/us.anthropic.claude-sonnet-4-6",
+  "input": {
+   "inputContentType": "application/json",
+   "inputTokenCount": 10
+  },
+  "output": {
+   "outputContentType": "application/json",
+   "outputBodyJson": {
+    "model": "claude-sonnet-4-6",
+    "id": "msg_redacted_4",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "OK"
+     }
+    ],
+    "stop_reason": "max_tokens",
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 10,
+     "cache_creation_input_tokens": 2874,
+     "cache_read_input_tokens": 0,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 2874,
+      "ephemeral_1h_input_tokens": 0
+     },
+     "output_tokens": 5
+    }
+   },
+   "outputTokenCount": 5
+  },
+  "identity": {
+   "arn": "arn:aws:sts::111122223333:assumed-role/ExampleRole/example-user"
+  },
+  "inferenceRegion": "us-east-2",
+  "schemaType": "ModelInvocationLog",
+  "schemaVersion": "1.0"
+ },
+ {
+  "timestamp": "2026-10-06T07:55:09Z",
+  "accountId": "111122223333",
+  "region": "us-west-2",
+  "requestId": "00000000-0000-0000-0000-000000000005",
+  "operation": "ConverseStream",
+  "modelId": "us.anthropic.claude-sonnet-4-6",
+  "input": {
+   "inputContentType": "application/json",
+   "inputTokenCount": 10
+  },
+  "output": {
+   "outputContentType": "application/json",
+   "outputBodyJson": {
+    "output": {
+     "message": {
+      "role": "assistant",
+      "content": [
+       {
+        "text": "OK"
+       }
+      ]
+     }
+    },
+    "stopReason": "max_tokens",
+    "metrics": {
+     "latencyMs": 1036
+    },
+    "usage": {
+     "inputTokens": 10,
+     "cacheReadInputTokens": 0,
+     "cacheWriteInputTokens": 2874,
+     "outputTokens": 5,
+     "totalTokens": 2889
+    }
+   },
+   "outputTokenCount": 5
+  },
+  "identity": {
+   "arn": "arn:aws:sts::111122223333:assumed-role/ExampleRole/example-user"
+  },
+  "inferenceRegion": "us-east-2",
+  "schemaType": "ModelInvocationLog",
+  "schemaVersion": "1.0"
+ },
+ {
+  "timestamp": "2026-10-06T07:55:22Z",
+  "accountId": "111122223333",
+  "region": "us-west-2",
+  "requestId": "00000000-0000-0000-0000-000000000006",
+  "operation": "InvokeModelWithResponseStream",
+  "modelId": "arn:aws:bedrock:us-west-2:111122223333:inference-profile/us.anthropic.claude-sonnet-4-6",
+  "input": {
+   "inputContentType": "application/json",
+   "inputTokenCount": 10
+  },
+  "output": {
+   "outputContentType": "application/json",
+   "outputBodyJson": [
+    {
+     "type": "message_start",
+     "message": {
+      "model": "claude-sonnet-4-6",
+      "id": "msg_redacted_6",
+      "type": "message",
+      "role": "assistant",
+      "content": [],
+      "stop_reason": null,
+      "stop_sequence": null,
+      "stop_details": null,
+      "usage": {
+       "input_tokens": 10,
+       "cache_creation_input_tokens": 0,
+       "cache_read_input_tokens": 2877,
+       "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+       },
+       "output_tokens": 1
+      }
+     }
+    },
+    {
+     "type": "content_block_start",
+     "index": 0,
+     "content_block": {
+      "type": "text",
+      "text": ""
+     }
+    },
+    {
+     "type": "content_block_delta",
+     "index": 0,
+     "delta": {
+      "type": "text_delta",
+      "text": "OK"
+     }
+    },
+    {
+     "type": "content_block_delta",
+     "index": 0,
+     "delta": {
+      "type": "text_delta",
+      "text": "OK"
+     }
+    },
+    {
+     "type": "content_block_delta",
+     "index": 0,
+     "delta": {
+      "type": "text_delta",
+      "text": "OK"
+     }
+    },
+    {
+     "type": "content_block_stop",
+     "index": 0
+    },
+    {
+     "type": "message_delta",
+     "delta": {
+      "stop_reason": "max_tokens",
+      "stop_sequence": null,
+      "stop_details": null
+     },
+     "usage": {
+      "input_tokens": 10,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2877,
+      "output_tokens": 5
+     }
+    },
+    {
+     "type": "message_stop",
+     "amazon-bedrock-invocationMetrics": {
+      "inputTokenCount": 10,
+      "outputTokenCount": 5,
+      "invocationLatency": 959,
+      "firstByteLatency": 833,
+      "cacheReadInputTokenCount": 2877,
+      "cacheWriteInputTokenCount": 0
+     }
+    }
+   ],
+   "outputTokenCount": 5
+  },
+  "identity": {
+   "arn": "arn:aws:sts::111122223333:assumed-role/ExampleRole/example-user"
+  },
+  "inferenceRegion": "us-east-2",
+  "schemaType": "ModelInvocationLog",
+  "schemaVersion": "1.0"
+ },
+ {
+  "timestamp": "2026-10-06T07:55:20Z",
+  "accountId": "111122223333",
+  "region": "us-west-2",
+  "requestId": "00000000-0000-0000-0000-000000000007",
+  "operation": "InvokeModelWithResponseStream",
+  "modelId": "arn:aws:bedrock:us-west-2:111122223333:inference-profile/us.anthropic.claude-sonnet-4-6",
+  "input": {
+   "inputContentType": "application/json",
+   "inputTokenCount": 10
+  },
+  "output": {
+   "outputContentType": "application/json",
+   "outputBodyJson": [
+    {
+     "type": "message_start",
+     "message": {
+      "model": "claude-sonnet-4-6",
+      "id": "msg_redacted_7",
+      "type": "message",
+      "role": "assistant",
+      "content": [],
+      "stop_reason": null,
+      "stop_sequence": null,
+      "stop_details": null,
+      "usage": {
+       "input_tokens": 10,
+       "cache_creation_input_tokens": 2877,
+       "cache_read_input_tokens": 0,
+       "cache_creation": {
+        "ephemeral_5m_input_tokens": 2877,
+        "ephemeral_1h_input_tokens": 0
+       },
+       "output_tokens": 1
+      }
+     }
+    },
+    {
+     "type": "content_block_start",
+     "index": 0,
+     "content_block": {
+      "type": "text",
+      "text": ""
+     }
+    },
+    {
+     "type": "content_block_delta",
+     "index": 0,
+     "delta": {
+      "type": "text_delta",
+      "text": "OK"
+     }
+    },
+    {
+     "type": "content_block_delta",
+     "index": 0,
+     "delta": {
+      "type": "text_delta",
+      "text": "OK"
+     }
+    },
+    {
+     "type": "content_block_delta",
+     "index": 0,
+     "delta": {
+      "type": "text_delta",
+      "text": "OK"
+     }
+    },
+    {
+     "type": "content_block_delta",
+     "index": 0,
+     "delta": {
+      "type": "text_delta",
+      "text": "OK"
+     }
+    },
+    {
+     "type": "content_block_stop",
+     "index": 0
+    },
+    {
+     "type": "message_delta",
+     "delta": {
+      "stop_reason": "max_tokens",
+      "stop_sequence": null,
+      "stop_details": null
+     },
+     "usage": {
+      "input_tokens": 10,
+      "cache_creation_input_tokens": 2877,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 5
+     }
+    },
+    {
+     "type": "message_stop",
+     "amazon-bedrock-invocationMetrics": {
+      "inputTokenCount": 10,
+      "outputTokenCount": 5,
+      "invocationLatency": 948,
+      "firstByteLatency": 808,
+      "cacheReadInputTokenCount": 0,
+      "cacheWriteInputTokenCount": 2877
+     }
+    }
+   ],
+   "outputTokenCount": 5
+  },
+  "identity": {
+   "arn": "arn:aws:sts::111122223333:assumed-role/ExampleRole/example-user"
+  },
+  "inferenceRegion": "us-east-2",
+  "schemaType": "ModelInvocationLog",
+  "schemaVersion": "1.0"
+ }
+]

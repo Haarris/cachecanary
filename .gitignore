@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+live_results.json
+live_log_records.json
