@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CacheCanary: catch broken Claude prompt caching on Bedrock</title>
+<meta name="description" content="A free CLI and GitHub Action that checks your Bedrock requests for broken Claude prompt caching, explains why a call missed the cache, and reads your invocation logs.">
+<meta property="og:title" content="CacheCanary">
+<meta property="og:description" content="Find out when your Claude prompt cache stops working on Amazon Bedrock, before the bill does.">
+<meta property="og:url" content="https://cachecanary.com/">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<link rel="canonical" href="https://cachecanary.com/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a class="brand" href="/" aria-label="CacheCanary home">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="15" cy="17" r="11" fill="#f2c230"/><circle cx="19" cy="14" r="1.8" fill="#1d1d1b"/><path d="M25 16.5l5 1.5-5 1.8z" fill="#e8892b"/></svg>
+    CacheCanary
+  </a>
+  <nav>
+    <a href="#how">How it works</a>
+    <a href="https://github.com/Haarris/cachecanary">GitHub</a>
+  </nav>
+</header>
+
+<main>
+<h1>Find out when your Claude prompt cache stops working on Bedrock.</h1>
+
+<p class="lead">Cached prompts cost about a tenth as much to read. When caching breaks, requests still succeed and nothing errors. Usually the bill is the first sign. CacheCanary checks your requests in CI, tells you why a call missed the cache, and shows hit rates from your Bedrock logs.</p>
+
+<div class="install"><span id="install-cmd">pip install cachecanary</span><button type="button" id="copy" aria-label="Copy install command">Copy</button></div>
+<div class="actions">
+  <a class="btn primary" href="https://github.com/Haarris/cachecanary">Get it on GitHub</a>
+  <a class="btn" href="https://github.com/Haarris/cachecanary#readme">Read the docs</a>
+</div>
+<p class="note under-actions">Free and open source (Apache 2.0). Runs on your machine. Nothing is sent anywhere.</p>
+
+<h2 id="how">What it looks like</h2>
+<p>Save a request your app sends to Bedrock as JSON and point CacheCanary at it.</p>
+<div class="term"><pre><span class="p">$</span> cachecanary lint request.json
+<span class="w">[warn]</span> dynamic-in-prefix: Found ISO date text inside the cached prefix. If it changes per request, every call misses. (system[0])
+
+<span class="p">$</span> cachecanary diff yesterday.json today.json
+system-changed: The system prompt changed inside the cached prefix (look for dates, IDs or per-user text). (system[0])
+
+<span class="p">$</span> cachecanary lint request.json --model us.anthropic.claude-haiku-4-5-20251001-v1:0
+<span class="e">[error]</span> prefix-too-short: Prefix up to this checkpoint is ~1892 tokens; claude-haiku-4-5 needs at least 4096. The request succeeds but nothing is cached. (system[0])</pre></div>
+<p class="note">The same prompt caches fine on Sonnet 4.6, which needs 1,024 tokens, and never caches on Haiku 4.5, which needs 4,096.</p>
+
+<h2>Why caching breaks</h2>
+<p>Often nobody changed the prompt on purpose. These are the usual causes:</p>
+<ul>
+  <li>A library upgrade moved the system prompt or dropped the cache marker. <a href="https://docs.litellm.ai/blog/bedrock-invoke-prompt-caching-incident">This happened with LiteLLM in July 2026</a>: hit rates fell from about 90% to 25-45% and spend went up 2-3x for six days.</li>
+  <li>You moved to a new model ID or an inference profile ARN, and your library no longer knows it can cache.</li>
+  <li>A small edit put today's date, a request ID or the user's name into the system prompt.</li>
+  <li>Tools are built in a different order on each request.</li>
+  <li>An agent made a dozen parallel tool calls, and Bedrock only looks back about 20 blocks for the cached part.</li>
+</ul>
+<p>Anthropic added cache diagnostics to its own API, but it doesn't cover Bedrock. That's the gap CacheCanary fills.</p>
+
+<h2>Put it in CI</h2>
+<p>Problems show up as notes on the pull request, next to the file that caused them.</p>
+<pre class="yaml">- uses: Haarris/cachecanary@v0
+  with:
+    command: lint
+    args: tests/fixtures/agent_request.json --model us.anthropic.claude-sonnet-4-6
+
+# Or call Bedrock for real (needs AWS credentials)
+- uses: Haarris/cachecanary@v0
+  with:
+    command: probe
+    args: tests/fixtures/agent_request.json --model us.anthropic.claude-sonnet-4-6</pre>
+
+<h2>Tested on real Bedrock</h2>
+<p>The main cases were run against Amazon Bedrock in October 2026 with made-up prompts: cache hits on both APIs, both TTLs, streaming, model minimums, a date in the system prompt, reordered tools, a model switch and the 20-block lookback.</p>
+<div class="facts">
+  <div class="fact"><b>11 / 11</b><span>cache scenarios behaved as expected</span></div>
+  <div class="fact"><b>4 / 4</b><span>Bedrock call types parsed from logs, matching the API exactly</span></div>
+  <div class="fact"><b>3,097 vs 5,121</b><span>tokens read from cache without and with an extra checkpoint after 12 tool calls</span></div>
+</div>
+
+<h2>Coming next</h2>
+<p>A hosted dashboard: cache hit rate and wasted spend per app, an alert when the rate drops, and the reason for each miss. It runs inside your own AWS account, so prompts never leave it.</p>
+<p>If you'd use it, email <a href="mailto:hello@cachecanary.com">hello@cachecanary.com</a>. I read every message.</p>
+</main>
+
+<footer>
+  CacheCanary is free and open source under the Apache 2.0 license. Made by Haris Farooq.<br>
+  <a href="https://github.com/Haarris/cachecanary">GitHub</a> · <a href="mailto:hello@cachecanary.com">hello@cachecanary.com</a>
+</footer>
+
+</div>
+<script src="/main.js" defer></script>
+</body>
+</html>

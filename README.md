@@ -92,7 +92,7 @@ It reads S3 deliveries, CloudWatch exports and `aws logs filter-log-events` outp
 
 ## Tested on real Bedrock
 
-I checked each rule against Amazon Bedrock in October 2026 using made-up prompts:
+I ran the main cases against Amazon Bedrock in October 2026 using made-up prompts. The rest of the checks (checkpoint counts, TTL order, a plain-string `system`) follow the AWS documentation and are covered by unit tests.
 
 - 11 of 11 scenarios behaved as expected: cache hits on Converse and InvokeModel, 5-minute and 1-hour TTLs, streaming, model minimums, a date in the system prompt, reordered tools, a model switch, and the 20-block lookback (3,097 tokens read from cache without an extra checkpoint, 5,121 with one).
 - The log parser matched the token counts the API returned, for all four call types. The redacted log records are in [tests/fixtures](tests/fixtures/).
