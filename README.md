@@ -3,7 +3,7 @@
 Know the moment your Claude prompt cache breaks on Amazon Bedrock, not when the bill arrives.
 
 [![CI](https://github.com/Haarris/cachecanary/actions/workflows/ci.yml/badge.svg)](https://github.com/Haarris/cachecanary/actions/workflows/ci.yml)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/Haarris/cachecanary/blob/main/LICENSE)
 
 Cache reads on Bedrock cost about a tenth of normal input tokens, so a long system prompt or tool list gets a lot cheaper once it's cached. The catch is that caching fails quietly. Bump a library, switch to a new model ID, put today's date in the system prompt, or let your tools come out in a different order, and the cache stops hitting. Requests still return 200 and the answers are still right. You find out from the bill.
 
@@ -95,7 +95,7 @@ It reads S3 deliveries, CloudWatch exports and `aws logs filter-log-events` outp
 I ran the main cases against Amazon Bedrock in October 2026 using made-up prompts. The rest of the checks (checkpoint counts, TTL order, a plain-string `system`) follow the AWS documentation and are covered by unit tests.
 
 - 11 of 11 scenarios behaved as expected: cache hits on Converse and InvokeModel, 5-minute and 1-hour TTLs, streaming, model minimums, a date in the system prompt, reordered tools, a model switch, and the 20-block lookback (3,097 tokens read from cache without an extra checkpoint, 5,121 with one).
-- The log parser matched the token counts the API returned, for all four call types. The redacted log records are in [tests/fixtures](tests/fixtures/).
+- The log parser matched the token counts the API returned, for all four call types. The redacted log records are in [tests/fixtures](https://github.com/Haarris/cachecanary/tree/main/tests/fixtures).
 
 You can rerun this in an AWS Region with no production traffic: `python scripts/live_test.py --region <region>`.
 
@@ -117,4 +117,4 @@ Vertex AI and LiteLLM support are also planned.
 
 ## License
 
-Apache 2.0. See [LICENSE](LICENSE). Copyright 2026 Haris Farooq.
+Apache 2.0. See [LICENSE](https://github.com/Haarris/cachecanary/blob/main/LICENSE). Copyright 2026 Haris Farooq.
