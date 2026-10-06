@@ -92,7 +92,7 @@ It reads S3 deliveries, CloudWatch exports and `aws logs filter-log-events` outp
 
 ## How it's tested
 
-The checks follow AWS's documented prompt-caching rules and were verified against live Amazon Bedrock: Converse and InvokeModel, streaming, both cache TTLs, model minimums, prompt changes and the 20-block lookback. The log reader is tested against real Bedrock invocation logs (redacted copies are in [tests/fixtures](https://github.com/Haarris/cachecanary/tree/main/tests/fixtures)).
+The checks follow AWS's documented prompt-caching rules. The core behaviour was verified against live Amazon Bedrock: Converse and InvokeModel, streaming, both cache TTLs, model minimums, prompt changes and the 20-block lookback. Every check also has unit tests. The log reader is tested against real Bedrock invocation logs (redacted copies are in [tests/fixtures](https://github.com/Haarris/cachecanary/tree/main/tests/fixtures)).
 
 To run the live checks yourself, use an AWS Region without production traffic: `python scripts/live_test.py --region <region>`.
 

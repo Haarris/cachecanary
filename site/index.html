@@ -78,7 +78,7 @@ system-changed: The system prompt changed inside the cached prefix (look for dat
     args: tests/fixtures/agent_request.json --model us.anthropic.claude-sonnet-4-6</pre>
 
 <h2>Built on how Bedrock actually behaves</h2>
-<p>Every check follows AWS's documented caching rules and was verified against live Amazon Bedrock, including streaming, both cache TTLs and each model's minimum prompt size. The log reader is tested against real Bedrock invocation logs.</p>
+<p>The checks follow AWS's documented caching rules, and the core behaviour was verified against live Amazon Bedrock, including streaming, both cache TTLs and each model's minimum prompt size. The log reader is tested against real Bedrock invocation logs.</p>
 
 <h2>Coming next</h2>
 <p>A hosted dashboard: cache hit rate and wasted spend per app, an alert when the rate drops, and the reason for each miss. It runs inside your own AWS account, so prompts never leave it.</p>
