@@ -24,7 +24,8 @@ def test_no_inline_code_so_csp_can_stay_strict():
     for page in ("index.html", "404.html"):
         html = (SITE / page).read_text()
         assert "<style" not in html and 'style="' not in html, page
-        assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>", html), page
+        # Structured data (application/ld+json) is not executed, so CSP doesn't apply to it.
+        assert not re.search(r"<script(?![^>]*\b(?:src=|type=\"application/ld\+json\"))[^>]*>", html), page
         assert not re.search(r"\son[a-z]+=", html), f"inline event handler in {page}"
 
 
@@ -71,3 +72,21 @@ def test_site_logs_example_matches_real_output(capsys, monkeypatch):
     page = html.unescape(re.sub(r"<[^>]+>", "", INDEX))
     for line in capsys.readouterr().out.strip().split("\n"):
         assert line in page, line
+
+
+def test_structured_data_matches_the_package():
+    import json
+    from cachecanary import __version__
+    m = re.search(r'<script type="application/ld\+json">(.*?)</script>', INDEX, re.S)
+    data = json.loads(m.group(1))
+    assert data["@type"] == "SoftwareApplication" and data["name"] == "CacheCanary"
+    assert data["softwareVersion"] == __version__  # bump it with every release
+    assert data["offers"]["price"] == "0" and data["url"] == "https://cachecanary.com/"
+
+
+def test_sitemap_and_robots():
+    import xml.etree.ElementTree as ET
+    root = ET.parse(SITE / "sitemap.xml").getroot()
+    locs = [e.text for e in root.iter("{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
+    assert locs == ["https://cachecanary.com/"]
+    assert "Sitemap: https://cachecanary.com/sitemap.xml" in (SITE / "robots.txt").read_text()
