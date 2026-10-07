@@ -127,6 +127,11 @@ def test_litellm_page_basics_and_links():
         for link in ('href="/litellm/"', 'href="/strands/"', 'href="/#guides"'):
             assert link in menu
         assert '<script src="/main.js" defer></script>' in page  # closes the menu on outside click and Escape
+        assert '<span class="soon" aria-disabled="true">LangChain <em>coming soon</em></span>' in menu  # listed, not a link
+    top = INDEX.split('<h2>What a broken cache costs</h2>')[0]  # near the top of the home page
+    assert 'Framework guides: <a href="/litellm/">LiteLLM</a> · <a href="/strands/">Strands Agents</a> · LangChain (coming soon)' in top
+    assert "<li>LangChain: coming soon.</li>" in guides
+    assert "langchain" not in (SITE / "sitemap.xml").read_text().lower()  # nothing to index until it is live
     assert "https://cachecanary.com/litellm/" in (SITE / "llms.txt").read_text()
 
 
