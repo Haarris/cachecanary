@@ -5,23 +5,26 @@ from pathlib import Path
 
 SITE = Path(__file__).resolve().parents[1] / "site"
 INDEX = (SITE / "index.html").read_text()
+LITELLM = (SITE / "litellm" / "index.html").read_text()
+PAGES = ("index.html", "404.html", "litellm/index.html")
 
 
 def test_required_files_exist():
-    for name in ("index.html", "404.html", "style.css", "main.js", "favicon.svg", "_headers", "robots.txt"):
+    for name in ("index.html", "404.html", "litellm/index.html", "style.css", "main.js", "favicon.svg", "_headers", "robots.txt"):
         assert (SITE / name).is_file(), name
 
 
 def test_every_local_reference_exists():
-    for page in ("index.html", "404.html"):
+    for page in PAGES:
         html = (SITE / page).read_text()
         for ref in re.findall(r'(?:href|src)="(/[^"#]*)"', html):
             if ref != "/":
-                assert (SITE / ref.lstrip("/")).is_file(), f"{page} references missing {ref}"
+                target = SITE / ref.lstrip("/")
+                assert (target / "index.html" if ref.endswith("/") else target).is_file(), f"{page} references missing {ref}"
 
 
 def test_no_inline_code_so_csp_can_stay_strict():
-    for page in ("index.html", "404.html"):
+    for page in PAGES:
         html = (SITE / page).read_text()
         assert "<style" not in html and 'style="' not in html, page
         # Structured data (application/ld+json) is not executed, so CSP doesn't apply to it.
@@ -88,7 +91,7 @@ def test_sitemap_and_robots():
     import xml.etree.ElementTree as ET
     root = ET.parse(SITE / "sitemap.xml").getroot()
     locs = [e.text for e in root.iter("{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
-    assert locs == ["https://cachecanary.com/"]
+    assert locs == ["https://cachecanary.com/", "https://cachecanary.com/litellm/"]
     assert "Sitemap: https://cachecanary.com/sitemap.xml" in (SITE / "robots.txt").read_text()
 
 
@@ -108,3 +111,77 @@ def test_llms_txt_follows_the_format_and_links_resolve_locally():
     # Facts that must stay in step with the code.
     from cachecanary.models import MAX_BLOCKS_ADDED
     assert f"{MAX_BLOCKS_ADDED} added still hits, {MAX_BLOCKS_ADDED + 1} always misses" in text
+
+
+def test_litellm_page_basics_and_links():
+    assert '<html lang="en">' in LITELLM and 'name="viewport"' in LITELLM and "<title>" in LITELLM
+    assert 'name="description"' in LITELLM
+    assert 'rel="canonical" href="https://cachecanary.com/litellm/"' in LITELLM
+    assert "—" not in LITELLM  # writing style: no em dashes
+    assert 'href="/litellm/"' in INDEX  # linked from the home page
+    assert "https://cachecanary.com/litellm/" in (SITE / "llms.txt").read_text()
+
+
+def test_litellm_page_outputs_match_real_output(capsys, monkeypatch):
+    """Every diff shown on the LiteLLM page is what the CLI prints for the requests LiteLLM 1.104.0 built."""
+    import html
+    from cachecanary import cli
+    monkeypatch.chdir(SITE.parent / "tests" / "fixtures" / "litellm")
+    page = html.unescape(re.sub(r"<[^>]+>", "", LITELLM))
+    cmds = re.findall(r"\$ (cachecanary diff [^\n]+)", page)
+    assert len(cmds) == 3
+    for cmd in cmds:
+        args = cmd.split()[1:]
+        cli.main(args)
+        out = capsys.readouterr().out.strip()
+        assert out, cmd
+        for line in out.split("\n"):
+            assert line in page, f"{cmd}: {line}"
+
+
+def _page_helper():
+    import html
+    code = html.unescape(re.search(r'<pre class="yaml">(def cache_points.*?)\n\n\nresponse', LITELLM, re.S).group(1))
+    ns = {}
+    exec(code, ns)
+    return ns["cache_points"]
+
+
+def _calls(n):
+    return {"role": "assistant", "content": None,
+            "tool_calls": [{"id": f"t{i}", "type": "function", "function": {"name": "f", "arguments": "{}"}} for i in range(n)]}
+
+
+def _results(n):
+    return [{"role": "tool", "tool_call_id": f"t{i}", "content": "ok"} for i in range(n)]
+
+
+def test_litellm_page_helper_places_points_as_described():
+    cache_points = _page_helper()
+    system, user = {"role": "system", "content": "s"}, {"role": "user", "content": "u"}
+    indexes = lambda pts: sorted(p["index"] for p in pts if "index" in p)
+    # First call: system + end; the newest user message is the end, so LiteLLM merges the two.
+    pts = cache_points([system, user])
+    assert {"location": "message", "role": "system"} in pts and indexes(pts) == [-1, 1]
+    # A tool round: newest user message, first tool result of the round, end of conversation.
+    msgs = [system, user, _calls(12)] + _results(12)
+    assert indexes(cache_points(msgs)) == [-1, 1, 3]
+    # A second round: the round point moves to the newest round.
+    msgs2 = msgs + [_calls(3)] + _results(3)
+    assert indexes(cache_points(msgs2)) == [-1, 1, 16]
+    # The user speaks after the tools: no round point (the newest round is older than the user message).
+    msgs3 = msgs + [{"role": "assistant", "content": "done"}, user]
+    assert indexes(cache_points(msgs3)) == [-1, 16]
+    # Assistant tool calls with no results yet: no point past the end.
+    assert indexes(cache_points([system, user, _calls(2)])) == [-1, 1]
+    # No system message, no user message: still valid, never more than 4 points.
+    assert indexes(cache_points([_calls(1)] + _results(1))) == [-1, 1]
+    for m in (msgs, msgs2, msgs3):
+        assert len(cache_points(m)) <= 4
+
+
+def test_live_script_uses_the_page_helper():
+    import html
+    page = html.unescape(re.search(r'<pre class="yaml">(def cache_points.*?)\n\n\nresponse', LITELLM, re.S).group(1))
+    script = (SITE.parent / "scripts" / "live_litellm_checks.py").read_text()
+    assert page in script

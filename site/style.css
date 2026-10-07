@@ -97,3 +97,9 @@
     .install { display: flex; width: 100%; justify-content: space-between; font-size: 14px; }
   }
   h3 { font-size: 18px; margin: 30px 0 8px; }
+  .scroll { overflow-x: auto; margin: 16px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--muted); font-size: 14px; }
+  td:not(:first-child) { white-space: nowrap; }
+  p code, li code, td code { overflow-wrap: anywhere; }
