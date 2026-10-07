@@ -94,6 +94,8 @@
     .lead { font-size: 17px; }
     .facts { grid-template-columns: 1fr; }
     nav a:first-child { display: none; }
+    nav a { margin-left: 14px; }
+    .wide-only { display: none; }
     .install { display: flex; width: 100%; justify-content: space-between; font-size: 14px; }
   }
   h3 { font-size: 18px; margin: 30px 0 8px; }
@@ -103,3 +105,8 @@
   th { font-weight: 600; color: var(--muted); font-size: 14px; }
   td:not(:first-child) { white-space: nowrap; }
   p code, li code, td code { overflow-wrap: anywhere; }
+  @media (max-width: 360px) {
+    .brand { font-size: 16px; gap: 8px; }
+    .brand svg { width: 24px; height: 24px; }
+    nav a { margin-left: 12px; font-size: 14px; }
+  }

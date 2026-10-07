@@ -119,6 +119,8 @@ def test_litellm_page_basics_and_links():
     assert 'rel="canonical" href="https://cachecanary.com/litellm/"' in LITELLM
     assert "—" not in LITELLM  # writing style: no em dashes
     assert 'href="/litellm/"' in INDEX  # linked from the home page
+    nav = re.search(r"<nav>(.*?)</nav>", INDEX, re.S).group(1)
+    assert 'href="/litellm/"' in nav  # and from the top menu
     assert "https://cachecanary.com/litellm/" in (SITE / "llms.txt").read_text()
 
 
