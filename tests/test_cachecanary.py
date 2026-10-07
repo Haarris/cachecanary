@@ -279,3 +279,26 @@ def test_cli_diff_exit_code(tmp_path):
 
 def test_single_new_question_is_not_flagged():
     assert "no-conversation-checkpoint" not in rules(lint.lint(normalize(converse_request())))
+
+
+def test_added_or_removed_tool_is_tools_changed():
+    """A tool added at the end lines up with A's first system block; it is still a tools change
+    (seen with Strands, which adds the structured-output tool for one call)."""
+    t1 = {"toolSpec": {"name": "a", "inputSchema": {"json": {}}}}
+    t2 = {"toolSpec": {"name": "b", "inputSchema": {"json": {}}}}
+    one = normalize(converse_request(tools=[t1]))
+    two = normalize(converse_request(tools=[t1, t2]))
+    assert diff.explain(one, two)[0].code == "tools-changed"
+    assert diff.explain(two, one)[0].code == "tools-changed"
+    none = normalize(converse_request(tools=None))
+    assert diff.explain(none, one)[0].code == "tools-changed"
+
+
+def test_added_system_block_is_system_changed():
+    """A system block added after the system cache point lines up with A's first message block."""
+    cached_turn = [{"role": "user", "content": [{"text": "hi"}, {"cachePoint": {"type": "default"}}]}]
+    a = normalize(converse_request(messages=cached_turn))
+    b_req = converse_request(messages=cached_turn)
+    b_req["system"].append({"text": "Extra rule."})
+    b = normalize(b_req)
+    assert diff.explain(a, b)[0].code == "system-changed"

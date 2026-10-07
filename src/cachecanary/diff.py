@@ -136,8 +136,13 @@ def _thinking_label(key: str | None) -> str:
     return str(cfg.get("type", "on")) + (f", budget {budget}" if budget is not None else "")
 
 
+_SECTION_ORDER = {"tools": 0, "system": 1, "messages": 2}
+
+
 def _classify_change(a: NormalizedRequest, b: NormalizedRequest, i: int) -> MissReason:
-    section = a.blocks[i].section
+    # The earlier section of the two sides is what changed: a tool added at the end of the list
+    # lines up with A's first system block, and a system block added lines up with A's messages.
+    section = min(a.blocks[i].section, b.blocks[i].section, key=_SECTION_ORDER.__getitem__)
     if section == "tools":
         a_tools = sorted(x.content for x in a.blocks if x.section == "tools")
         b_tools = sorted(x.content for x in b.blocks if x.section == "tools")
