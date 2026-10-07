@@ -185,3 +185,14 @@ def test_live_script_uses_the_page_helper():
     page = html.unescape(re.search(r'<pre class="yaml">(def cache_points.*?)\n\n\nresponse', LITELLM, re.S).group(1))
     script = (SITE.parent / "scripts" / "live_litellm_checks.py").read_text()
     assert page in script
+
+
+def test_social_preview_images():
+    """LinkedIn, X and Slack show a blank box without og:image; each page has its own 1200x630 card."""
+    import struct
+    for html, name in ((INDEX, "og.png"), (LITELLM, "og-litellm.png")):
+        assert f'<meta property="og:image" content="https://cachecanary.com/{name}">' in html
+        assert 'content="summary_large_image"' in html and 'property="og:image:alt"' in html
+        data = (SITE / name).read_bytes()
+        assert data[:8] == b"\x89PNG\r\n\x1a\n" and len(data) < 5_000_000
+        assert struct.unpack(">II", data[16:24]) == (1200, 630)
