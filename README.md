@@ -143,7 +143,7 @@ Everything runs on your machine or CI runner. Nothing is sent anywhere. `probe` 
 
 A hosted dashboard: cache hit rate and wasted spend per app, an alert when the rate drops, and the reason for each miss. It would run inside your own AWS account, so prompts never leave it. If you'd use that, email [hello@cachecanary.com](mailto:hello@cachecanary.com).
 
-Vertex AI and LiteLLM support are also planned.
+Vertex AI support is also planned.
 
 ## License
 
