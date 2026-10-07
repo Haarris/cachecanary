@@ -11,6 +11,8 @@ LiteLLM hit this in [July 2026](https://docs.litellm.ai/blog/bedrock-invoke-prom
 
 I wrote up the five ways I've seen caching break on Bedrock, with the bug reports behind each one and the lookback limit I measured: [Five ways Claude prompt caching quietly breaks on Amazon Bedrock](https://harisfarooq.substack.com/p/five-ways-claude-prompt-caching-quietly).
 
+Website: [cachecanary.com](https://cachecanary.com). It has guides that show exactly what a framework sends to Bedrock, where the cache is lost, and a tested setup that keeps it: [LiteLLM](https://cachecanary.com/litellm/) and [Strands Agents](https://cachecanary.com/strands/).
+
 What that costs: the cached part of each request becomes about 10x more expensive, because cache reads are billed at a tenth of the input price. For one agent with a 10,000-token prompt and 100,000 requests a month, that's roughly $2,700 a month extra at Anthropic's list price for Claude Sonnet 4.6 ($3 per million input tokens; Bedrock prices vary by region).
 
 CacheCanary is a small CLI and GitHub Action for this. It checks your requests in CI, tells you why a request missed the cache, and reads your Bedrock logs to show hit rates in production.
@@ -146,3 +148,5 @@ Vertex AI and LiteLLM support are also planned.
 ## License
 
 Apache 2.0. See [LICENSE](https://github.com/Haarris/cachecanary/blob/main/LICENSE). Copyright 2026 Haris Farooq.
+
+Made by [Haris Farooq](https://www.linkedin.com/in/haris-farooq), an engineer who runs Claude agents on Bedrock in production.

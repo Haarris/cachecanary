@@ -378,3 +378,18 @@ def test_search_result_structured_data():
         assert article["url"] == article["mainEntityOfPage"] == url
         assert article["author"]["name"] == "Haris Farooq" and article["datePublished"] <= article["dateModified"]
         assert [i["item"] for i in crumbs["itemListElement"]] == ["https://cachecanary.com/", url]
+
+
+def test_author_links_everywhere():
+    """Readers (and recruiters) can reach the author from every page, the README and the structured data."""
+    li = "https://www.linkedin.com/in/haris-farooq"
+    for html in (INDEX, LITELLM, STRANDS):
+        footer = re.search(r"<footer>(.*?)</footer>", html, re.S).group(1)
+        assert f'Made by <a href="{li}">Haris Farooq</a>' in footer and f'<a href="{li}">LinkedIn</a>' in footer
+        assert "mailto:hello@cachecanary.com" in footer and "https://github.com/Haarris/cachecanary" in footer
+        authors = [d["author"] for d in _json_ld(html) if "author" in d]
+        assert authors and all(a["url"] == li and li in a["sameAs"] for a in authors)
+    readme = (SITE.parent / "README.md").read_text()
+    assert f"[Haris Farooq]({li})" in readme
+    for link in ("https://cachecanary.com", "https://cachecanary.com/litellm/", "https://cachecanary.com/strands/"):
+        assert f"]({link})" in readme
