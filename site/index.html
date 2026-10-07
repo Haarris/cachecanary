@@ -81,7 +81,7 @@
       <div class="menu">
         <a href="/litellm/">LiteLLM</a>
         <a href="/strands/">Strands Agents</a>
-        <span class="soon" aria-disabled="true">LangChain <em>coming soon</em></span>
+        <a href="/langchain/">LangChain</a>
         <a href="/#guides">All guides</a>
       </div>
     </details>
@@ -100,7 +100,7 @@
   <a class="btn" href="https://github.com/Haarris/cachecanary#readme">Read the docs</a>
 </div>
 <p class="note under-actions">Free and open source (Apache 2.0). The tool runs on your machine and sends nothing anywhere.</p>
-<p class="note">Framework guides: <a href="/litellm/">LiteLLM</a> · <a href="/strands/">Strands Agents</a> · LangChain (coming soon)</p>
+<p class="note">Framework guides: <a href="/litellm/">LiteLLM</a> · <a href="/strands/">Strands Agents</a> · <a href="/langchain/">LangChain</a></p>
 
 <h2>What a broken cache costs</h2>
 <div class="facts">
@@ -178,7 +178,7 @@ system-changed: The system prompt changed inside the cached prefix (look for dat
 <ul>
   <li><a href="/litellm/">Prompt caching with LiteLLM on Amazon Bedrock</a>: <code>role: "user"</code> caching your oldest messages, wide tool calls, and a 1-hour cache lifetime that is quietly dropped.</li>
   <li><a href="/strands/">Prompt caching with Strands Agents on Amazon Bedrock</a>: caching that is off by default, wide tool calls, and long chats that lose the cache on every turn.</li>
-  <li>LangChain: coming soon.</li>
+  <li><a href="/langchain/">Prompt caching with LangChain on Amazon Bedrock</a>: ChatBedrock losing the whole cache after 10 tool calls, context editing that rewrites the conversation on every call, and your own cache points turning off LangChain's extra one.</li>
 </ul>
 
 <h2>Built on how Bedrock actually behaves</h2>

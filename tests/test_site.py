@@ -7,11 +7,13 @@ SITE = Path(__file__).resolve().parents[1] / "site"
 INDEX = (SITE / "index.html").read_text()
 LITELLM = (SITE / "litellm" / "index.html").read_text()
 STRANDS = (SITE / "strands" / "index.html").read_text()
-PAGES = ("index.html", "404.html", "litellm/index.html", "strands/index.html")
+LANGCHAIN = (SITE / "langchain" / "index.html").read_text()
+GUIDES = (LITELLM, STRANDS, LANGCHAIN)
+PAGES = ("index.html", "404.html", "litellm/index.html", "strands/index.html", "langchain/index.html")
 
 
 def test_required_files_exist():
-    for name in ("index.html", "404.html", "litellm/index.html", "strands/index.html", "style.css", "main.js", "favicon.svg", "_headers", "robots.txt"):
+    for name in ("index.html", "404.html", "litellm/index.html", "strands/index.html", "langchain/index.html", "style.css", "main.js", "favicon.svg", "_headers", "robots.txt"):
         assert (SITE / name).is_file(), name
 
 
@@ -92,7 +94,8 @@ def test_sitemap_and_robots():
     import xml.etree.ElementTree as ET
     root = ET.parse(SITE / "sitemap.xml").getroot()
     locs = [e.text for e in root.iter("{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
-    assert locs == ["https://cachecanary.com/", "https://cachecanary.com/litellm/", "https://cachecanary.com/strands/"]
+    assert locs == ["https://cachecanary.com/", "https://cachecanary.com/litellm/", "https://cachecanary.com/strands/",
+                    "https://cachecanary.com/langchain/"]
     assert "Sitemap: https://cachecanary.com/sitemap.xml" in (SITE / "robots.txt").read_text()
 
 
@@ -120,18 +123,18 @@ def test_litellm_page_basics_and_links():
     assert 'rel="canonical" href="https://cachecanary.com/litellm/"' in LITELLM
     assert "—" not in LITELLM  # writing style: no em dashes
     guides = re.search(r'<h2 id="guides">.*?</ul>', INDEX, re.S).group(0)
-    assert 'href="/litellm/"' in guides and 'href="/strands/"' in guides  # listed in the home page's guides section
-    for page in (INDEX, LITELLM, STRANDS):  # every top menu has a Guides dropdown with each guide
+    assert all(f'href="/{g}/"' in guides for g in ("litellm", "strands", "langchain"))  # the home page's guides section
+    for page in (INDEX,) + GUIDES:  # every top menu has a Guides dropdown with each guide
         nav = re.search(r"<nav>(.*?)</nav>", page, re.S).group(1)
         menu = re.search(r'<details class="guides">.*?</details>', nav, re.S).group(0)
-        for link in ('href="/litellm/"', 'href="/strands/"', 'href="/#guides"'):
+        for link in ('href="/litellm/"', 'href="/strands/"', 'href="/langchain/"', 'href="/#guides"'):
             assert link in menu
         assert '<script src="/main.js" defer></script>' in page  # closes the menu on outside click and Escape
-        assert '<span class="soon" aria-disabled="true">LangChain <em>coming soon</em></span>' in menu  # listed, not a link
+        assert "soon" not in menu  # every guide listed is live
     top = INDEX.split('<h2>What a broken cache costs</h2>')[0]  # near the top of the home page
-    assert 'Framework guides: <a href="/litellm/">LiteLLM</a> · <a href="/strands/">Strands Agents</a> · LangChain (coming soon)' in top
-    assert "<li>LangChain: coming soon.</li>" in guides
-    assert "langchain" not in (SITE / "sitemap.xml").read_text().lower()  # nothing to index until it is live
+    assert ('Framework guides: <a href="/litellm/">LiteLLM</a> · <a href="/strands/">Strands Agents</a> · '
+            '<a href="/langchain/">LangChain</a>') in top
+    assert "soon" not in INDEX
     assert "https://cachecanary.com/litellm/" in (SITE / "llms.txt").read_text()
 
 
@@ -203,7 +206,7 @@ def test_live_script_uses_the_page_helper():
 def test_social_preview_images():
     """LinkedIn, X and Slack show a blank box without og:image; each page has its own 2400x1260 card (sharp on high-resolution screens)."""
     import struct
-    for html, name in ((INDEX, "og.png"), (LITELLM, "og-litellm.png"), (STRANDS, "og-strands.png")):
+    for html, name in ((INDEX, "og.png"), (LITELLM, "og-litellm.png"), (STRANDS, "og-strands.png"), (LANGCHAIN, "og-langchain.png")):
         # ?v=N busts LinkedIn's image cache; bump it whenever a card changes.
         assert re.search(rf'<meta property="og:image" content="https://cachecanary.com/{re.escape(name)}\?v=\d+">', html)
         assert 'content="summary_large_image"' in html
@@ -368,7 +371,7 @@ def test_search_result_structured_data():
     """Site name for Google results, and each guide marked up as an article with a breadcrumb."""
     website = [d for d in _json_ld(INDEX) if d["@type"] == "WebSite"]
     assert website and website[0]["name"] == "CacheCanary" and website[0]["url"] == "https://cachecanary.com/"
-    for html, path in ((LITELLM, "litellm"), (STRANDS, "strands")):
+    for html, path in ((LITELLM, "litellm"), (STRANDS, "strands"), (LANGCHAIN, "langchain")):
         data = {d["@type"]: d for d in _json_ld(html)}
         article, crumbs = data["TechArticle"], data["BreadcrumbList"]
         url = f"https://cachecanary.com/{path}/"
@@ -383,7 +386,7 @@ def test_search_result_structured_data():
 def test_author_links_everywhere():
     """Readers (and recruiters) can reach the author from every page, the README and the structured data."""
     li = "https://www.linkedin.com/in/haris-farooq"
-    for html in (INDEX, LITELLM, STRANDS):
+    for html in (INDEX,) + GUIDES:
         footer = re.search(r"<footer>(.*?)</footer>", html, re.S).group(1)
         assert f'Made by <a href="{li}">Haris Farooq</a>' in footer and f'<a href="{li}">LinkedIn</a>' in footer
         assert "mailto:hello@cachecanary.com" in footer and "https://github.com/Haarris/cachecanary" in footer
@@ -391,5 +394,85 @@ def test_author_links_everywhere():
         assert authors and all(a["url"] == li and li in a["sameAs"] for a in authors)
     readme = (SITE.parent / "README.md").read_text()
     assert f"[Haris Farooq]({li})" in readme
-    for link in ("https://cachecanary.com", "https://cachecanary.com/litellm/", "https://cachecanary.com/strands/"):
+    for link in ("https://cachecanary.com", "https://cachecanary.com/litellm/", "https://cachecanary.com/strands/",
+                 "https://cachecanary.com/langchain/"):
         assert f"]({link})" in readme
+
+
+def test_langchain_page_basics_and_links():
+    assert '<html lang="en">' in LANGCHAIN and 'name="viewport"' in LANGCHAIN and "<title>" in LANGCHAIN
+    assert 'rel="canonical" href="https://cachecanary.com/langchain/"' in LANGCHAIN
+    assert "—" not in LANGCHAIN  # writing style: no em dashes
+    assert "https://cachecanary.com/langchain/" in (SITE / "llms.txt").read_text()
+    for other in (LITELLM, STRANDS):  # the guides point to each other
+        assert 'href="/langchain/"' in other.split("<main>")[1]
+    assert 'href="/litellm/"' in LANGCHAIN.split("<main>")[1] and 'href="/strands/"' in LANGCHAIN.split("<main>")[1]
+
+
+def test_langchain_page_outputs_match_real_output(capsys, monkeypatch):
+    """Every command shown on the LangChain page prints exactly this for the requests LangChain built."""
+    import html
+    from cachecanary import cli
+    monkeypatch.chdir(SITE.parent / "tests" / "fixtures" / "langchain")
+    page = html.unescape(re.sub(r"<[^>]+>", "", LANGCHAIN))
+    cmds = re.findall(r"\$ (cachecanary (?:diff|lint) [^\n]+)", page)
+    assert len(cmds) == 3
+    for cmd in cmds:
+        cli.main(cmd.split()[1:])
+        out = capsys.readouterr().out.strip()
+        assert out, cmd
+        for line in out.split("\n"):
+            assert line in page, f"{cmd}: {line}"
+
+
+def _langchain_chunks_code():
+    import html
+    return html.unescape(re.search(r"(@dataclass\(slots=True\)\nclass ClearToolUsesInChunks.*?)\n\n\nediting = ",
+                                   LANGCHAIN, re.S).group(1)).rstrip()
+
+
+def test_langchain_chunks_clears_whole_batches():
+    """ClearToolUsesInChunks only changes the history when a whole batch can be cleared (stand-ins for langchain)."""
+    import sys
+    import types
+    from dataclasses import dataclass
+
+    class ToolMessage:
+        pass
+
+    @dataclass(slots=True)
+    class ClearToolUsesEdit:  # the part of LangChain's class the subclass relies on: keep the newest `keep`
+        trigger: int = 100_000
+        keep: int = 3
+
+        def apply(self, messages, *, count_tokens):
+            results = [i for i, m in enumerate(messages) if isinstance(m, ToolMessage)]
+            for i in (results[: -self.keep] if self.keep else results):
+                messages[i] = "[cleared]"
+
+    middleware = types.ModuleType("langchain.agents.middleware")
+    middleware.ClearToolUsesEdit = ClearToolUsesEdit
+    core = types.ModuleType("langchain_core.messages")
+    core.ToolMessage = ToolMessage
+    saved = {k: sys.modules.get(k) for k in ("langchain.agents.middleware", "langchain_core.messages")}
+    sys.modules.update({"langchain.agents.middleware": middleware, "langchain_core.messages": core})
+    try:
+        ns = {}
+        exec("from dataclasses import dataclass\nfrom langchain.agents.middleware import ClearToolUsesEdit\n"
+             "from langchain_core.messages import ToolMessage\n" + _langchain_chunks_code(), ns)
+    finally:
+        for k, v in saved.items():
+            sys.modules.pop(k, None) if v is None else sys.modules.__setitem__(k, v)
+    edit = ns["ClearToolUsesInChunks"](keep=3, chunk=10)
+    history, seen = [], []
+    for n in range(1, 31):
+        history.append(ToolMessage())
+        view = list(history)
+        edit.apply(view, count_tokens=len)
+        seen.append(view.count("[cleared]"))
+        assert view[-1] != "[cleared]" and edit.keep == 3  # the newest result is never cleared; settings restored
+    assert seen == [0] * 12 + [10] * 10 + [20] * 8  # changes only when 10 more can go (n = 13 and 23)
+
+
+def test_langchain_live_script_uses_the_page_code():
+    assert _langchain_chunks_code() in (SITE.parent / "scripts" / "live_langchain_checks.py").read_text()

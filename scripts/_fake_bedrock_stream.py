@@ -1,8 +1,10 @@
-"""A local stand-in for bedrock-runtime that speaks the real Converse and ConverseStream formats.
+"""A local stand-in for bedrock-runtime that speaks the real Converse, ConverseStream and InvokeModel formats.
 
 Lets an agent framework run its real agent loop offline: each request body is saved, and replies follow
-a script of turns: "tools:N" (N parallel toolUse blocks for a lookup_order tool), "text" (a short answer)
-or "text:N" (an N-line answer). Point a client at it with endpoint_url=Fake().url and fake credentials.
+a script of turns: "tools:N" (N parallel toolUse blocks for a lookup_order tool), "text" (a short answer),
+"text:N" (an N-line answer) or "use:NAME:JSON" (one call to the named tool, e.g. a structured-output tool).
+InvokeModel replies use the Anthropic Messages format. Point a client at it with endpoint_url=Fake().url
+and fake credentials.
 """
 import json, struct, threading, zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -33,6 +35,14 @@ class Fake:
                 fake.requests.append({"path": path, "body": body})
                 step = fake.script[fake.turn] if fake.turn < len(fake.script) else "text"
                 fake.turn += 1
+                if path.endswith("/invoke"):
+                    return self._json(fake.messages_api(step, fake.turn))
+                if path.endswith("/invoke-with-response-stream"):
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/vnd.amazon.eventstream")
+                    data = fake.messages_stream(step, fake.turn)
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers(); self.wfile.write(data); return
                 if path.endswith("/converse-stream"):
                     self.send_response(200)
                     self.send_header("Content-Type", "application/vnd.amazon.eventstream")
@@ -60,6 +70,14 @@ class Fake:
 
     def stream(self, step, turn):
         out = event("messageStart", {"role": "assistant"})
+        if step.startswith("use:"):
+            _, name, raw = step.split(":", 2)
+            out += event("contentBlockStart", {"start": {"toolUse": {"toolUseId": f"u{turn}", "name": name}}, "contentBlockIndex": 0})
+            out += event("contentBlockDelta", {"delta": {"toolUse": {"input": raw}}, "contentBlockIndex": 0})
+            out += event("contentBlockStop", {"contentBlockIndex": 0})
+            out += event("messageStop", {"stopReason": "tool_use"})
+            out += event("metadata", {"usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}, "metrics": {"latencyMs": 1}})
+            return out
         if step.startswith("tools:"):
             for i, (tid, inp) in enumerate(self._calls(step, turn)):
                 out += event("contentBlockStart", {"start": {"toolUse": {"toolUseId": tid, "name": "lookup_order"}}, "contentBlockIndex": i})
@@ -76,6 +94,10 @@ class Fake:
         return out
 
     def whole(self, step, turn):
+        if step.startswith("use:"):
+            _, name, raw = step.split(":", 2)
+            return {"output": {"message": {"role": "assistant", "content": [{"toolUse": {"toolUseId": f"u{turn}", "name": name, "input": json.loads(raw)}}]}},
+                    "stopReason": "tool_use", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}, "metrics": {"latencyMs": 1}}
         if step.startswith("tools:"):
             content = [{"toolUse": {"toolUseId": tid, "name": "lookup_order", "input": inp}} for tid, inp in self._calls(step, turn)]
             stop = "tool_use"
@@ -84,3 +106,30 @@ class Fake:
             content, stop = [{"text": text}], "end_turn"
         return {"output": {"message": {"role": "assistant", "content": content}}, "stopReason": stop,
                 "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}, "metrics": {"latencyMs": 1}}
+
+    # InvokeModel (Anthropic Messages API) replies, for ChatBedrock and other invoke-route clients.
+    def messages_api(self, step, turn):
+        if step.startswith("tools:"):
+            content = [{"type": "tool_use", "id": tid, "name": "lookup_order", "input": inp} for tid, inp in self._calls(step, turn)]
+            stop = "tool_use"
+        else:
+            text = "All done." if step == "text" else " ".join(f"Line {j} of answer {turn}." for j in range(int(step.split(":")[1])))
+            content, stop = [{"type": "text", "text": text}], "end_turn"
+        return {"id": f"msg_{turn}", "type": "message", "role": "assistant", "model": "claude", "content": content,
+                "stop_reason": stop, "stop_sequence": None, "usage": {"input_tokens": 1, "output_tokens": 1}}
+
+    def messages_stream(self, step, turn):
+        import base64
+        whole = self.messages_api(step, turn)
+        events = [{"type": "message_start", "message": {**whole, "content": [], "stop_reason": None}}]
+        for i, block in enumerate(whole["content"]):
+            if block["type"] == "tool_use":
+                events.append({"type": "content_block_start", "index": i, "content_block": {"type": "tool_use", "id": block["id"], "name": block["name"], "input": {}}})
+                events.append({"type": "content_block_delta", "index": i, "delta": {"type": "input_json_delta", "partial_json": json.dumps(block["input"])}})
+            else:
+                events.append({"type": "content_block_start", "index": i, "content_block": {"type": "text", "text": ""}})
+                events.append({"type": "content_block_delta", "index": i, "delta": {"type": "text_delta", "text": block["text"]}})
+            events.append({"type": "content_block_stop", "index": i})
+        events.append({"type": "message_delta", "delta": {"stop_reason": whole["stop_reason"]}, "usage": {"output_tokens": 1}})
+        events.append({"type": "message_stop", "amazon-bedrock-invocationMetrics": {"inputTokenCount": 1, "outputTokenCount": 1, "invocationLatency": 1, "firstByteLatency": 1}})
+        return b"".join(event("chunk", {"bytes": base64.b64encode(json.dumps(e).encode()).decode()}) for e in events)

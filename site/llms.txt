@@ -21,6 +21,7 @@ What it checks, each verified against live Amazon Bedrock (Claude Sonnet 4.6, us
 - [Website](https://cachecanary.com/): overview, how prompt caching works, examples with real output
 - [LiteLLM guide](https://cachecanary.com/litellm/): what LiteLLM 1.104.0 sends to Bedrock, where cache_control_injection_points lose the cache (role "user", parallel tool calls, dropped 1-hour lifetime), and a tested setup that keeps it
 - [Strands Agents guide](https://cachecanary.com/strands/): what Strands Agents 1.58.1 sends to Bedrock: caching off by default, more than 10 parallel tool calls losing the conversation, the default 40-message window losing the cache every turn, inference profile ARNs needing strategy "anthropic", and lifetime settings Bedrock rejects, with a tested hook and conversation manager
+- [LangChain guide](https://cachecanary.com/langchain/): what langchain-aws 1.8.1 and LangChain 1.4.3 send to Bedrock from create_agent: caching off until you add BedrockPromptCachingMiddleware, ChatBedrock losing the whole cache after 10 parallel tool calls (ChatBedrockConverse holds 21), ClearToolUsesEdit context editing rewriting the conversation on every call, and your own cache point turning off LangChain's extra one, with a tested fix for each
 - [PyPI](https://pypi.org/project/cachecanary/): package and release history
 - [GitHub Action on the Marketplace](https://github.com/marketplace/actions/cachecanary): `uses: Haarris/cachecanary@v0`
 
