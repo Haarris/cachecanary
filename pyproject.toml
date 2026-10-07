@@ -29,7 +29,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Haarris/cachecanary"
+Homepage = "https://cachecanary.com"
 Source = "https://github.com/Haarris/cachecanary"
 Issues = "https://github.com/Haarris/cachecanary/issues"
 

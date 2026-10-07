@@ -340,3 +340,41 @@ def test_strands_live_script_uses_the_page_code():
     hook = _strands_code("class BedrockCachePoints", "\n\n\nagent = Agent(")
     trim = _strands_code("class TrimInChunks", "\n\n\nagent = Agent(")
     assert hook in script and trim in script
+
+
+def test_icons_for_browsers_and_search_results():
+    """Google shows a site's icon in results only if it can fetch one; it asks for a size that is a multiple of 48."""
+    import struct
+    for page in PAGES:
+        html = (SITE / page).read_text()
+        for tag in ('<link rel="icon" href="/favicon.ico" sizes="48x48">', '<link rel="icon" href="/favicon.svg" type="image/svg+xml">',
+                    '<link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192">', '<link rel="apple-touch-icon" href="/apple-touch-icon.png">'):
+            assert tag in html, (page, tag)
+    ico = (SITE / "favicon.ico").read_bytes()
+    assert ico[:4] == b"\x00\x00\x01\x00"  # ICO header
+    sizes = {(ico[6 + 16 * i] or 256, ico[7 + 16 * i] or 256) for i in range(struct.unpack("<H", ico[4:6])[0])}
+    assert (48, 48) in sizes and (32, 32) in sizes and (16, 16) in sizes
+    for name, size in (("icon-192.png", (192, 192)), ("apple-touch-icon.png", (180, 180))):
+        data = (SITE / name).read_bytes()
+        assert data[:8] == b"\x89PNG\r\n\x1a\n" and struct.unpack(">II", data[16:24]) == size
+
+
+def _json_ld(html):
+    import json
+    return [json.loads(m) for m in re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)]
+
+
+def test_search_result_structured_data():
+    """Site name for Google results, and each guide marked up as an article with a breadcrumb."""
+    website = [d for d in _json_ld(INDEX) if d["@type"] == "WebSite"]
+    assert website and website[0]["name"] == "CacheCanary" and website[0]["url"] == "https://cachecanary.com/"
+    for html, path in ((LITELLM, "litellm"), (STRANDS, "strands")):
+        data = {d["@type"]: d for d in _json_ld(html)}
+        article, crumbs = data["TechArticle"], data["BreadcrumbList"]
+        url = f"https://cachecanary.com/{path}/"
+        assert article["headline"] == re.search(r"<h1>(.*?)</h1>", html).group(1)
+        assert article["description"] == re.search(r'<meta name="description" content="([^"]*)">', html).group(1)
+        assert article["image"] == re.search(r'<meta property="og:image" content="([^"]*)">', html).group(1)
+        assert article["url"] == article["mainEntityOfPage"] == url
+        assert article["author"]["name"] == "Haris Farooq" and article["datePublished"] <= article["dateModified"]
+        assert [i["item"] for i in crumbs["itemListElement"]] == ["https://cachecanary.com/", url]
