@@ -190,11 +190,13 @@ def test_live_script_uses_the_page_helper():
 
 
 def test_social_preview_images():
-    """LinkedIn, X and Slack show a blank box without og:image; each page has its own 1200x630 card."""
+    """LinkedIn, X and Slack show a blank box without og:image; each page has its own 2400x1260 card (sharp on high-resolution screens)."""
     import struct
     for html, name in ((INDEX, "og.png"), (LITELLM, "og-litellm.png")):
         assert f'<meta property="og:image" content="https://cachecanary.com/{name}">' in html
-        assert 'content="summary_large_image"' in html and 'property="og:image:alt"' in html
+        assert 'content="summary_large_image"' in html
+        assert re.search(r'og:title" content="[^"]{20,}"', html)  # says what it is, not just the name and 'property="og:image:alt"' in html
         data = (SITE / name).read_bytes()
         assert data[:8] == b"\x89PNG\r\n\x1a\n" and len(data) < 5_000_000
-        assert struct.unpack(">II", data[16:24]) == (1200, 630)
+        assert struct.unpack(">II", data[16:24]) == (2400, 1260)
+        assert 'og:image:width" content="2400"' in html and 'og:image:height" content="1260"' in html
