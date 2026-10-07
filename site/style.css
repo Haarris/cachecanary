@@ -95,7 +95,6 @@
     .facts { grid-template-columns: 1fr; }
     nav a:first-child { display: none; }
     nav a { margin-left: 14px; }
-    .wide-only { display: none; }
     .install { display: flex; width: 100%; justify-content: space-between; font-size: 14px; }
   }
   h3 { font-size: 18px; margin: 30px 0 8px; }

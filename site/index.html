@@ -59,7 +59,7 @@
   </a>
   <nav>
     <a href="#how">How it works</a>
-    <a href="/litellm/">LiteLLM<span class="wide-only"> guide</span></a>
+    <a href="#guides">Guides</a>
     <a href="https://github.com/Haarris/cachecanary">GitHub</a>
   </nav>
 </header>
@@ -145,8 +145,14 @@ system-changed: The system prompt changed inside the cached prefix (look for dat
   <li>An agent ran a dozen tools at once. Bedrock only searches back about 20 pieces of the conversation (messages, tool calls and tool results) for the cached part, so it can lose track of it.</li>
 </ul>
 <p>I wrote these up in more detail, with the bug reports behind each one and the lookback limit I measured: <a href="https://harisfarooq.substack.com/p/five-ways-claude-prompt-caching-quietly">Five ways Claude prompt caching quietly breaks on Amazon Bedrock</a>.</p>
-<p>Using LiteLLM? I captured exactly what it sends to Bedrock and tested it live: <a href="/litellm/">Prompt caching with LiteLLM on Amazon Bedrock</a>.</p>
 <p>Anthropic added cache diagnostics to its own API, so you can see why a request missed. They don't cover Bedrock. That's the gap CacheCanary fills.</p>
+
+<h2 id="guides">Guides for your framework</h2>
+<p>I captured exactly what each framework sends to Bedrock, checked it with CacheCanary and tested it on live Bedrock. Each guide shows where the cache is lost and a setup that keeps it.</p>
+<ul>
+  <li><a href="/litellm/">Prompt caching with LiteLLM on Amazon Bedrock</a>: <code>role: "user"</code> caching your oldest messages, wide tool calls, and a 1-hour cache lifetime that is quietly dropped.</li>
+  <li><a href="/strands/">Prompt caching with Strands Agents on Amazon Bedrock</a>: caching that is off by default, wide tool calls, and long chats that lose the cache on every turn.</li>
+</ul>
 
 <h2>Built on how Bedrock actually behaves</h2>
 <p>The checks follow AWS's documented caching rules. The core behaviour was verified against live Amazon Bedrock, including streaming responses, both cache lifetimes (5 minutes and 1 hour), and each model's minimum prompt size. The log reader is tested against real Bedrock invocation logs.</p>

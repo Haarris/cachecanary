@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strands Agents prompt caching on Amazon Bedrock: what actually gets cached</title>
+<meta name="description" content="I captured the exact Bedrock requests Strands Agents 1.58.1 sends and tested them on live Bedrock. Caching is off by default, and wide tool calls and long chats lose the cache. Here is a setup that keeps it.">
+<meta property="og:title" content="Strands Agents prompt caching on Amazon Bedrock">
+<meta property="og:description" content="What Strands Agents actually sends to Bedrock, five ways it quietly costs you, and a setup that keeps the cache. Tested on live Bedrock.">
+<meta property="og:url" content="https://cachecanary.com/strands/">
+<meta property="og:type" content="article">
+<meta property="og:image" content="https://cachecanary.com/og-strands.png?v=1">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:image:alt" content="Prompt caching with Strands Agents on Amazon Bedrock, by CacheCanary.">
+<meta property="og:site_name" content="CacheCanary">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://cachecanary.com/strands/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a class="brand" href="/" aria-label="CacheCanary home">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 29.2h26" stroke="#8a5a2b" stroke-width="1.8" stroke-linecap="round"/><path d="M14.6 24.4l-.8 4.6M18.2 24l.4 5" stroke="#e8892b" stroke-width="1.4" stroke-linecap="round"/><path d="M10.5 19.5L2.2 25.4l4.4.4L12.8 22z" fill="#d9a514"/><ellipse cx="15.5" cy="18.6" rx="8.4" ry="6.2" transform="rotate(-24 15.5 18.6)" fill="#f2c230"/><circle cx="21.8" cy="11.2" r="4.7" fill="#f2c230"/><path d="M26 10l4.4 1.6-4.4 1.8z" fill="#e8892b"/><circle cx="23.2" cy="10.4" r="1.1" fill="#1d1d1b"/><path d="M9.6 19.6c2.2-4.4 6.8-5.6 9.6-4.2-1.2 3.8-5.4 6.4-9.6 4.2z" fill="#d9a514"/></svg>
+    CacheCanary
+  </a>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/#guides">Guides</a>
+    <a href="https://github.com/Haarris/cachecanary">GitHub</a>
+  </nav>
+</header>
+
+<main>
+<h1>Prompt caching with Strands Agents on Amazon Bedrock</h1>
+
+<p class="lead">Strands Agents is AWS's open-source agent SDK, and Bedrock is its default model provider. I captured the exact requests Strands 1.58.1 sends to Bedrock while it runs its real agent loop, checked them with CacheCanary, and ran every case on live Bedrock (Claude Sonnet 4.6, us-west-2, October 2026).</p>
+
+<p>The short version: caching is off unless you turn it on. Once it's on, it works for simple calls, but two things that agents do all the time quietly throw the cache away: many tool calls at once, and long conversations.</p>
+
+<h2>The setup I'd use</h2>
+<p>For most agents, turn caching on and swap the conversation manager for one that trims old messages in bulk (finding 3 explains why):</p>
+<pre class="yaml">from strands import Agent
+from strands.agent.conversation_manager import SlidingWindowConversationManager
+from strands.models import BedrockModel
+from strands.models.model import CacheConfig
+
+
+class TrimInChunks(SlidingWindowConversationManager):
+    """Trim old messages in bulk, so the cached start rarely changes."""
+
+    def __init__(self, window_size: int = 40, trim_to: int = 20, **kwargs):
+        super().__init__(window_size=window_size, **kwargs)
+        self.trim_to = trim_to
+
+    def apply_management(self, agent, **kwargs) -&gt; None:
+        if len(agent.messages) &lt;= self.window_size:
+            return
+        full, self.window_size = self.window_size, self.trim_to
+        try:
+            self.reduce_context(agent)
+        finally:
+            self.window_size = full
+
+    def restore_from_session(self, state):
+        # Let sessions saved with the default manager switch to this one.
+        if state.get("__name__") == "SlidingWindowConversationManager":
+            state = {**state, "__name__": type(self).__name__}
+        return super().restore_from_session(state)
+
+
+agent = Agent(
+    model=BedrockModel(
+        model_id="us.anthropic.claude-sonnet-4-6",
+        cache_config=CacheConfig(strategy="auto"),
+    ),
+    system_prompt=SYSTEM_PROMPT,
+    tools=tools,
+    conversation_manager=TrimInChunks(),
+)</pre>
+<p>If your agent sometimes calls more than 10 tools at once, add the hook from finding 2 as well.</p>
+
+<h2>What I found</h2>
+
+<h3>1. Caching is off by default</h3>
+<p>A plain <code>BedrockModel(model_id=...)</code> sends no cache points, so every call pays full price for the whole prompt. A change to turn caching on by default was proposed and closed without being merged. On live Bedrock, the same system prompt sent twice:</p>
+<div class="scroll">
+<table>
+  <thead><tr><th>Setup</th><th>Second call: read from cache</th><th>Paid at full price</th></tr></thead>
+  <tbody>
+    <tr><td>No <code>cache_config</code> (the default)</td><td>0</td><td>1,996</td></tr>
+    <tr><td><code>CacheConfig(strategy="auto")</code></td><td>1,993</td><td>3</td></tr>
+  </tbody>
+</table>
+</div>
+<p>With <code>strategy="auto"</code>, Strands puts one cache point after the system prompt and one at the end of the newest user message. After a round of tool calls, the newest user message is the one holding the tool results.</p>
+
+<h3>2. More than 10 tool calls at once lose the conversation</h3>
+<p>Bedrock only looks back 21 blocks from a cache point to find the previous cache entry, and every tool call and every tool result is a block. Auto mode keeps a single cache point in the conversation and moves it to the newest message, so a step that runs 11 tools at once adds 22 blocks and the previous entry is out of reach. The whole conversation is written to the cache again, at 1.25 times the normal price instead of a tenth of it. On live Bedrock, with a long customer history in the first message:</p>
+<div class="scroll">
+<table>
+  <thead><tr><th>Next step</th><th>Read from cache</th><th>Written again</th></tr></thead>
+  <tbody>
+    <tr><td>10 tool calls at once</td><td>6,933</td><td>1,783</td></tr>
+    <tr><td>11 tool calls at once</td><td>2,221 (system prompt only)</td><td>6,662</td></tr>
+  </tbody>
+</table>
+</div>
+<p>This is <a href="https://github.com/strands-agents/harness-sdk/issues/3348">issue #3348</a>, still open. Auto mode removes any cache point you add to earlier messages, so the fix is to leave <code>cache_config</code> unset and place the points yourself with a hook. This one uses the 4 points Bedrock allows on the system prompt, your newest message, the first result of the newest round of tool calls, and the end of the conversation:</p>
+<pre class="yaml">from strands.hooks import BeforeModelCallEvent, HookProvider, HookRegistry
+
+
+class BedrockCachePoints(HookProvider):
+    """Place cache points in the messages before every model call."""
+
+    def register_hooks(self, registry: HookRegistry, **kwargs) -&gt; None:
+        registry.add_callback(BeforeModelCallEvent, self.place)
+
+    def place(self, event: BeforeModelCallEvent) -&gt; None:
+        messages = event.agent.messages
+        for message in messages:  # drop the points from the previous call
+            message["content"] = [b for b in message["content"]
+                                  if "cachePoint" not in b]
+        typed = [i for i, m in enumerate(messages) if m["role"] == "user"
+                 and not any("toolResult" in b for b in m["content"])]
+        if typed:  # the newest message a person typed
+            newest = messages[typed[-1]]["content"]
+            self._add(newest, len(newest))
+        last = messages[-1]["content"] if messages else []
+        if messages and (not typed or typed[-1] != len(messages) - 1):
+            if any("toolResult" in b for b in last) and len(last) &gt; 1:
+                self._add(last, 1)  # after the first result of the round
+            self._add(last, len(last))  # the end of the conversation
+
+    @staticmethod
+    def _add(content, index):
+        # Bedrock rejects a cache point right after a non-PDF document,
+        # so step back past those.
+        def other_document(block):
+            return block.get("document", {}).get("format", "pdf") != "pdf"
+
+        while index &gt; 0 and other_document(content[index - 1]):
+            index -= 1
+        if index &gt; 0 and "cachePoint" not in content[index - 1]:
+            content.insert(index, {"cachePoint": {"type": "default"}})
+
+
+agent = Agent(
+    # no cache_config: the hook places the message cache points
+    model=BedrockModel(model_id="us.anthropic.claude-sonnet-4-6"),
+    system_prompt=[{"text": SYSTEM_PROMPT}, {"cachePoint": {"type": "default"}}],
+    tools=tools,
+    hooks=[BedrockCachePoints()],
+    conversation_manager=TrimInChunks(),
+)</pre>
+<p>On live Bedrock, through Strands' own agent loop, each step read almost the whole previous request from the cache:</p>
+<div class="scroll">
+<table>
+  <thead><tr><th>Step</th><th>Read from cache</th><th>Size of the previous request</th></tr></thead>
+  <tbody>
+    <tr><td>12 tool calls at once</td><td>6,933</td><td>6,936</td></tr>
+    <tr><td>1 tool call</td><td>9,066</td><td>9,067</td></tr>
+    <tr><td>20 tool calls at once</td><td>9,245</td><td>9,246</td></tr>
+    <tr><td>A follow-up question from the user</td><td>12,775</td><td>12,776</td></tr>
+    <tr><td>3 tool calls at once</td><td>12,791</td><td>12,794</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="note">Tokens. The last few tokens of each request are always new, so the cache can't hold them.</p>
+<p>It holds for up to 20 tool calls at once. At 21, the round before it is written again, but the point on your newest message still holds everything up to there (12,791 of 13,350 tokens read). I also ran it with a live model choosing its own tools: it called 6 at once, then 2, and the second question read 7,108 tokens from the cache and wrote 485. It works with Strands' session managers (they don't save the cache points, so a restored session starts clean) and with extended thinking turned on.</p>
+
+<h3>3. Long conversations lose the cache on every turn</h3>
+<p>By default Strands keeps the last 40 messages. Once a conversation is longer, it drops the oldest messages at the end of every call to the agent, so the start of the conversation changes every turn and nothing after the system prompt can be read from the cache. On live Bedrock, a chat with full-length answers, from the 22nd question on:</p>
+<div class="scroll">
+<table>
+  <thead><tr><th>Conversation manager</th><th>Read from cache</th><th>Written again</th></tr></thead>
+  <tbody>
+    <tr><td>Default (40 messages)</td><td>2,225 on every turn</td><td>15,871 on every turn</td></tr>
+    <tr><td><code>TrimInChunks()</code></td><td>10,323, then 11,100, 11,877, 12,654</td><td>777 on each turn</td></tr>
+  </tbody>
+</table>
+</div>
+<p><code>TrimInChunks</code> (in the setup above) lets the history grow to 40 messages and then trims it back to 20 in one go, so the start of the conversation changes about once every 10 turns instead of every turn. Over 45 questions, the default manager changed it on 24 calls and <code>TrimInChunks</code> on 3. It keeps 20 to 40 messages instead of always 40, so the model sees a little less history; raise both numbers if you need more. Without tools or with them, it works the same, and it works with the hook from finding 2 and with <code>per_turn</code> and <code>pin_first</code>. The last method matters if you save sessions: Strands checks the manager's class name when it restores one, and without it, a session saved with the default manager fails to load ("Invalid conversation manager state").</p>
+
+<h3>4. Application inference profiles need <code>strategy="anthropic"</code></h3>
+<p>Auto mode only caches when the model ID contains "claude" or "anthropic". An application inference profile ARN contains neither, so Strands logs a warning ("cache_config is enabled but this model does not support automatic caching") and sends no cache points. The maintainers chose this on purpose. If the profile points to a Claude model, say so:</p>
+<pre class="yaml">BedrockModel(
+    model_id="arn:aws:bedrock:REGION:ACCOUNT:application-inference-profile/ID",
+    cache_config=CacheConfig(strategy="anthropic"),
+)</pre>
+<p>On live Bedrock with a profile for Sonnet 4.6, the second call read 0 tokens from the cache with <code>"auto"</code> and 1,991 with <code>"anthropic"</code>.</p>
+
+<h3>5. Two cache lifetime settings that Bedrock rejects</h3>
+<p>Bedrock requires a 1-hour cache point to come before any 5-minute one, in the order tools, system prompt, messages. <code>CacheConfig(ttl="1h", system_prompt_ttl="5m")</code> and <code>CacheConfig(ttl="1h", tools_ttl="5m")</code> both put a 5-minute point first, so Bedrock rejects every request with "a ttl='1h' cache_control block must not come after a ttl='5m' cache_control block". This one is loud, but it takes your agent down until you change it (<a href="https://github.com/strands-agents/harness-sdk/issues/3758">issue #3758</a>). Use one lifetime everywhere, or give the earlier sections the longer one.</p>
+
+<h3>Smaller things</h3>
+<ul>
+  <li><code>tools_ttl=True</code> puts a cache point after your tool list. Bedrock caches tools first, so with a short tool list (under 1,024 tokens on Sonnet 4.6) that point caches nothing and uses up one of your 4. The system prompt point already covers the tools.</li>
+  <li>A date or request ID in the system prompt makes every call a miss. <code>cachecanary lint</code> warns about it.</li>
+  <li><code>structured_output_model</code> adds the output type as an extra tool for that call. Tools are cached first, so that call can't reuse the cache from your other calls; repeated structured calls share their own cache. The older <code>agent.structured_output()</code> replaces your tool list with the output type, so it can't reuse your cache either (it is deprecated anyway).</li>
+</ul>
+
+<h3>What Strands gets right</h3>
+<p>In auto mode Strands caches the system prompt as well as the conversation, keeps a cache point you place in the newest user message, and steps a cache point back when it would land right after a non-PDF document, which Bedrock rejects. In my tests, every request it sent was valid for Bedrock, apart from the two lifetime settings above.</p>
+
+<h2>Check your own agent</h2>
+<p>Save the exact requests your <code>BedrockModel</code> sends. This works for streaming and non-streaming calls; I checked each saved file is identical to what reached Bedrock.</p>
+<pre class="yaml">import pathlib, time
+
+
+def save_requests(model, folder="strands-requests"):
+    """Save every request this BedrockModel sends, for cachecanary."""
+    out = pathlib.Path(folder)
+    out.mkdir(exist_ok=True)
+
+    def save(params, **kwargs):
+        (out / f"{time.time_ns()}.json").write_bytes(params["body"])
+
+    for op in ("Converse", "ConverseStream"):
+        model.client.meta.events.register(
+            f"before-call.bedrock-runtime.{op}", save)
+
+
+model = BedrockModel(
+    model_id="us.anthropic.claude-sonnet-4-6",
+    cache_config=CacheConfig(strategy="auto"),
+)
+save_requests(model)</pre>
+<p>Run a conversation, then compare two requests in a row with <code>cachecanary diff</code>, or check one with <code>cachecanary lint</code>. These are real outputs on requests Strands built:</p>
+<div class="term"><pre><span class="p">$</span> cachecanary diff agent-turn1.json agent-turn2.json --model us.anthropic.claude-sonnet-4-6
+lookback-exceeded: 22 blocks were added between the previous checkpoint and the next one. Bedrock only finds an earlier cache entry up to 21 blocks back (21 added still hits, 22 misses), so this call writes the cache again. Add a checkpoint in between (common after many parallel tool calls). (messages[2].content[10])
+
+<span class="p">$</span> cachecanary diff chat-turn20.json chat-turn21.json --model us.anthropic.claude-sonnet-4-6
+history-changed: Earlier conversation history was edited (not just appended). (messages[0].content[0])
+
+<span class="p">$</span> cachecanary lint ttl-order.json --model us.anthropic.claude-sonnet-4-6
+<span class="e">[error]</span> ttl-order: A 1h checkpoint appears after a 5m checkpoint. Longer TTLs must come first.</pre></div>
+<p class="note">In plain words: the first pair is the 11-tool-call step from finding 2. The second is the default conversation manager trimming the first messages (finding 3). The third is the lifetime setting Bedrock rejects (finding 5).</p>
+<p>Keep a few saved requests in your repo and run <code>cachecanary lint</code> on them in CI, and a Strands upgrade that changes your cache points shows up in a pull request instead of on the bill. Setup is on the <a href="/">home page</a>.</p>
+
+<h2>How I tested this</h2>
+<p>Strands Agents 1.58.1 in a clean Python environment. To capture requests, I pointed Strands at a small local server standing in for Bedrock that speaks its streaming format, so Strands ran its real agent loop (tool calls, streaming, conversation trimming) and every request body was saved. The settings cases ran fully live on Bedrock (Claude Sonnet 4.6, us-west-2, October 7 2026). A live model won't call exactly 11 tools on request, so for the agent-loop cases I sent the exact requests Strands built, in order, to live Bedrock; caching depends only on the request. Every case uses made-up prompts with a fresh random tag, so old cache entries couldn't help. The capture and the live checks are scripts in the repo, so you can run them yourself: <a href="https://github.com/Haarris/cachecanary/blob/main/scripts/capture_strands_requests.py">capture</a> and <a href="https://github.com/Haarris/cachecanary/blob/main/scripts/live_strands_checks.py">live checks</a>. Token counts move by a few tokens from run to run because each run uses a new random tag. Strands changes quickly, so check your own version with the snippet above.</p>
+<p>Using LiteLLM instead? Same tests: <a href="/litellm/">Prompt caching with LiteLLM on Amazon Bedrock</a>. More on why caching breaks on Bedrock: <a href="https://harisfarooq.substack.com/p/five-ways-claude-prompt-caching-quietly">Five ways Claude prompt caching quietly breaks on Amazon Bedrock</a>.</p>
+</main>
+
+<footer>
+  CacheCanary is free and open source under the Apache 2.0 license. Made by Haris Farooq, an engineer who runs Claude agents on Bedrock in production.<br>
+  <a href="https://github.com/Haarris/cachecanary">GitHub</a> · <a href="mailto:hello@cachecanary.com">hello@cachecanary.com</a>
+</footer>
+
+</div>
+</body>
+</html>

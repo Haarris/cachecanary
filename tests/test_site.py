@@ -6,11 +6,12 @@ from pathlib import Path
 SITE = Path(__file__).resolve().parents[1] / "site"
 INDEX = (SITE / "index.html").read_text()
 LITELLM = (SITE / "litellm" / "index.html").read_text()
-PAGES = ("index.html", "404.html", "litellm/index.html")
+STRANDS = (SITE / "strands" / "index.html").read_text()
+PAGES = ("index.html", "404.html", "litellm/index.html", "strands/index.html")
 
 
 def test_required_files_exist():
-    for name in ("index.html", "404.html", "litellm/index.html", "style.css", "main.js", "favicon.svg", "_headers", "robots.txt"):
+    for name in ("index.html", "404.html", "litellm/index.html", "strands/index.html", "style.css", "main.js", "favicon.svg", "_headers", "robots.txt"):
         assert (SITE / name).is_file(), name
 
 
@@ -91,7 +92,7 @@ def test_sitemap_and_robots():
     import xml.etree.ElementTree as ET
     root = ET.parse(SITE / "sitemap.xml").getroot()
     locs = [e.text for e in root.iter("{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
-    assert locs == ["https://cachecanary.com/", "https://cachecanary.com/litellm/"]
+    assert locs == ["https://cachecanary.com/", "https://cachecanary.com/litellm/", "https://cachecanary.com/strands/"]
     assert "Sitemap: https://cachecanary.com/sitemap.xml" in (SITE / "robots.txt").read_text()
 
 
@@ -118,9 +119,11 @@ def test_litellm_page_basics_and_links():
     assert 'name="description"' in LITELLM
     assert 'rel="canonical" href="https://cachecanary.com/litellm/"' in LITELLM
     assert "—" not in LITELLM  # writing style: no em dashes
-    assert 'href="/litellm/"' in INDEX  # linked from the home page
-    nav = re.search(r"<nav>(.*?)</nav>", INDEX, re.S).group(1)
-    assert 'href="/litellm/"' in nav  # and from the top menu
+    guides = re.search(r'<h2 id="guides">.*?</ul>', INDEX, re.S).group(0)
+    assert 'href="/litellm/"' in guides and 'href="/strands/"' in guides  # listed in the home page's guides section
+    for page in (INDEX, LITELLM, STRANDS):  # which every top menu links to
+        nav = re.search(r"<nav>(.*?)</nav>", page, re.S).group(1)
+        assert 'href="#guides"' in nav or 'href="/#guides"' in nav
     assert "https://cachecanary.com/litellm/" in (SITE / "llms.txt").read_text()
 
 
@@ -192,12 +195,140 @@ def test_live_script_uses_the_page_helper():
 def test_social_preview_images():
     """LinkedIn, X and Slack show a blank box without og:image; each page has its own 2400x1260 card (sharp on high-resolution screens)."""
     import struct
-    for html, name in ((INDEX, "og.png"), (LITELLM, "og-litellm.png")):
+    for html, name in ((INDEX, "og.png"), (LITELLM, "og-litellm.png"), (STRANDS, "og-strands.png")):
         # ?v=N busts LinkedIn's image cache; bump it whenever a card changes.
         assert re.search(rf'<meta property="og:image" content="https://cachecanary.com/{re.escape(name)}\?v=\d+">', html)
         assert 'content="summary_large_image"' in html
-        assert re.search(r'og:title" content="[^"]{20,}"', html)  # says what it is, not just the name and 'property="og:image:alt"' in html
+        assert re.search(r'og:title" content="[^"]{20,}"', html)  # says what it is, not just the name
+        assert 'property="og:image:alt"' in html
         data = (SITE / name).read_bytes()
         assert data[:8] == b"\x89PNG\r\n\x1a\n" and len(data) < 5_000_000
         assert struct.unpack(">II", data[16:24]) == (2400, 1260)
         assert 'og:image:width" content="2400"' in html and 'og:image:height" content="1260"' in html
+
+
+def test_strands_page_basics_and_links():
+    assert '<html lang="en">' in STRANDS and 'name="viewport"' in STRANDS and "<title>" in STRANDS
+    assert 'name="description"' in STRANDS
+    assert 'rel="canonical" href="https://cachecanary.com/strands/"' in STRANDS
+    assert "—" not in STRANDS  # writing style: no em dashes
+    assert "https://cachecanary.com/strands/" in (SITE / "llms.txt").read_text()
+    assert 'href="/strands/"' in LITELLM and 'href="/litellm/"' in STRANDS  # the guides point to each other
+
+
+def test_strands_page_outputs_match_real_output(capsys, monkeypatch):
+    """Every command shown on the Strands page prints exactly this for the requests Strands 1.58.1 built."""
+    import html
+    from cachecanary import cli
+    monkeypatch.chdir(SITE.parent / "tests" / "fixtures" / "strands")
+    page = html.unescape(re.sub(r"<[^>]+>", "", STRANDS))
+    cmds = re.findall(r"\$ (cachecanary (?:diff|lint) [^\n]+)", page)
+    assert len(cmds) == 3
+    for cmd in cmds:
+        cli.main(cmd.split()[1:])
+        out = capsys.readouterr().out.strip()
+        assert out, cmd
+        for line in out.split("\n"):
+            assert line in page, f"{cmd}: {line}"
+
+
+def _strands_code(start, end):
+    import html
+    return html.unescape(re.search(rf'({re.escape(start)}.*?){re.escape(end)}', STRANDS, re.S).group(1)).rstrip()
+
+
+def _with_fake_strands(code):
+    """Run page code that imports strands, with tiny stand-ins (strands isn't a dependency of this repo)."""
+    import sys
+    import types
+    hooks = types.ModuleType("strands.hooks")
+    hooks.BeforeModelCallEvent, hooks.HookRegistry = object, object
+    hooks.HookProvider = type("HookProvider", (), {})
+    managers = types.ModuleType("strands.agent.conversation_manager")
+
+    class SlidingWindowConversationManager:  # the parts TrimInChunks relies on
+        def __init__(self, window_size=40, **kwargs):
+            self.window_size = window_size
+
+        def reduce_context(self, agent, **kwargs):
+            del agent.messages[: len(agent.messages) - self.window_size]
+
+        def restore_from_session(self, state):  # Strands checks the class name like this
+            if state.get("__name__") != self.__class__.__name__:
+                raise ValueError("Invalid conversation manager state.")
+
+    managers.SlidingWindowConversationManager = SlidingWindowConversationManager
+    saved = {k: sys.modules.get(k) for k in ("strands.hooks", "strands.agent.conversation_manager")}
+    sys.modules.update({"strands.hooks": hooks, "strands.agent.conversation_manager": managers})
+    try:
+        ns = {}
+        exec(code, ns)
+        return ns
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+
+
+def test_strands_page_hook_places_points_as_described():
+    import types
+    hook = _with_fake_strands(_strands_code("from strands.hooks import", "\n\n\nagent = Agent("))["BedrockCachePoints"]()
+    CP = {"cachePoint": {"type": "default"}}
+
+    def place(messages):
+        hook.place(types.SimpleNamespace(agent=types.SimpleNamespace(messages=messages)))
+        return [[i for i, b in enumerate(m["content"]) if "cachePoint" in b] for m in messages]
+
+    typed = lambda text: {"role": "user", "content": [{"text": text}]}
+    calls = lambda n: {"role": "assistant", "content": [{"toolUse": {"toolUseId": f"t{i}"}} for i in range(n)]}
+    results = lambda n: {"role": "user", "content": [{"toolResult": {"toolUseId": f"t{i}"}} for i in range(n)]}
+    # First call: the typed message is the end, one point.
+    assert place([typed("hi")]) == [[1]]
+    # A tool round: the typed message, the first result, the end (3 message points + system = 4).
+    assert place([typed("hi"), calls(12), results(12)]) == [[1], [], [1, 13]]
+    # Old points are removed: the next round moves them, never more than 3 in messages.
+    msgs = [typed("hi"), calls(12), results(12)]
+    place(msgs)
+    msgs += [calls(3), results(3)]
+    assert place(msgs) == [[1], [], [], [], [1, 4]]
+    # One tool result: a single point at the end.
+    assert place([typed("hi"), calls(1), results(1)]) == [[1], [], [1]]
+    # The person speaks after the tools: only their message carries a point.
+    assert place([typed("hi"), calls(2), results(2), {"role": "assistant", "content": [{"text": "done"}]}, typed("more")]) == [[], [], [], [], [1]]
+    # A non-PDF document at the end: the point goes before it; a PDF keeps the point after it.
+    doc = lambda fmt: {"role": "user", "content": [{"text": "read"}, {"document": {"format": fmt}}]}
+    assert place([doc("txt")]) == [[1]] and place([doc("pdf")]) == [[2]]
+    # A message that is only a non-PDF document gets no point (Bedrock would reject it).
+    assert place([{"role": "user", "content": [{"document": {"format": "csv"}}]}]) == [[]]
+    assert place([]) == []
+
+
+def test_strands_page_trim_in_chunks():
+    import types
+    code = _strands_code("class TrimInChunks", "\n\n\nagent = Agent(")
+    TrimInChunks = _with_fake_strands("from strands.agent.conversation_manager import SlidingWindowConversationManager\n" + code)["TrimInChunks"]
+    manager, agent = TrimInChunks(), types.SimpleNamespace(messages=list(range(40)))
+    manager.apply_management(agent)
+    assert len(agent.messages) == 40  # not full yet: nothing changes
+    agent.messages.append(40)
+    manager.apply_management(agent)
+    assert agent.messages == list(range(21, 41)) and manager.window_size == 40  # trimmed to 20 in one go
+    for n in range(41, 61):
+        agent.messages.append(n)
+        manager.apply_management(agent)
+    assert len(agent.messages) == 40 and agent.messages[0] == 21  # no trim until it is over 40 again
+    # Sessions saved with the default manager load; other managers' sessions are still refused.
+    TrimInChunks().restore_from_session({"__name__": "SlidingWindowConversationManager", "removed_message_count": 0})
+    TrimInChunks().restore_from_session({"__name__": "TrimInChunks", "removed_message_count": 0})
+    import pytest
+    with pytest.raises(ValueError):
+        TrimInChunks().restore_from_session({"__name__": "SummarizingConversationManager"})
+
+
+def test_strands_live_script_uses_the_page_code():
+    script = (SITE.parent / "scripts" / "live_strands_checks.py").read_text()
+    hook = _strands_code("class BedrockCachePoints", "\n\n\nagent = Agent(")
+    trim = _strands_code("class TrimInChunks", "\n\n\nagent = Agent(")
+    assert hook in script and trim in script
