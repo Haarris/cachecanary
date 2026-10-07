@@ -37,8 +37,19 @@
   header { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 18px; color: var(--text); text-decoration: none; }
   .brand svg { width: 28px; height: 28px; }
-  nav a { color: var(--muted); text-decoration: none; margin-left: 18px; font-size: 15px; }
-  nav a:hover { color: var(--text); }
+  nav { display: flex; align-items: center; }
+  nav > a, nav summary { color: var(--muted); text-decoration: none; margin-left: 18px; font-size: 15px; cursor: pointer; }
+  nav > a:hover, nav summary:hover { color: var(--text); }
+  nav details { position: relative; }
+  nav summary { list-style: none; }
+  nav summary::-webkit-details-marker { display: none; }
+  nav summary::after { content: ""; display: inline-block; margin-left: 5px; vertical-align: 2px; border: 4px solid transparent; border-top-color: currentColor; border-bottom: 0; }
+  nav .menu {
+    position: absolute; right: 0; top: calc(100% + 8px); z-index: 10; min-width: 170px; padding: 6px 0;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  }
+  nav .menu a { display: block; padding: 7px 14px; color: var(--text); text-decoration: none; font-size: 15px; white-space: nowrap; }
+  nav .menu a:hover, nav .menu a:focus-visible { background: var(--code-bg); }
   a { color: var(--link); }
   h1 { font-size: 40px; line-height: 1.15; letter-spacing: -0.02em; margin: 40px 0 18px; }
   h2 { font-size: 24px; letter-spacing: -0.01em; margin: 56px 0 12px; }
@@ -93,8 +104,8 @@
     h2 { font-size: 21px; margin-top: 44px; }
     .lead { font-size: 17px; }
     .facts { grid-template-columns: 1fr; }
-    nav a:first-child { display: none; }
-    nav a { margin-left: 14px; }
+    nav > a:first-child { display: none; }
+    nav > a, nav summary { margin-left: 14px; }
     .install { display: flex; width: 100%; justify-content: space-between; font-size: 14px; }
   }
   h3 { font-size: 18px; margin: 30px 0 8px; }
@@ -107,5 +118,5 @@
   @media (max-width: 360px) {
     .brand { font-size: 16px; gap: 8px; }
     .brand svg { width: 24px; height: 24px; }
-    nav a { margin-left: 12px; font-size: 14px; }
+    nav > a, nav summary { margin-left: 12px; font-size: 14px; }
   }

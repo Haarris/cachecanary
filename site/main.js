@@ -23,3 +23,22 @@
     }
   });
 })();
+
+// Guides menu: a <details> element, so it works without JavaScript. This only closes it on an
+// outside click, on Escape, or after picking a link on the same page.
+(function () {
+  var menu = document.querySelector("details.guides");
+  if (!menu) return;
+  document.addEventListener("click", function (e) {
+    if (menu.open && !menu.contains(e.target)) menu.open = false;
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && menu.open) {
+      menu.open = false;
+      menu.querySelector("summary").focus();
+    }
+  });
+  menu.querySelectorAll(".menu a").forEach(function (a) {
+    a.addEventListener("click", function () { menu.open = false; });
+  });
+})();

@@ -121,9 +121,12 @@ def test_litellm_page_basics_and_links():
     assert "—" not in LITELLM  # writing style: no em dashes
     guides = re.search(r'<h2 id="guides">.*?</ul>', INDEX, re.S).group(0)
     assert 'href="/litellm/"' in guides and 'href="/strands/"' in guides  # listed in the home page's guides section
-    for page in (INDEX, LITELLM, STRANDS):  # which every top menu links to
+    for page in (INDEX, LITELLM, STRANDS):  # every top menu has a Guides dropdown with each guide
         nav = re.search(r"<nav>(.*?)</nav>", page, re.S).group(1)
-        assert 'href="#guides"' in nav or 'href="/#guides"' in nav
+        menu = re.search(r'<details class="guides">.*?</details>', nav, re.S).group(0)
+        for link in ('href="/litellm/"', 'href="/strands/"', 'href="/#guides"'):
+            assert link in menu
+        assert '<script src="/main.js" defer></script>' in page  # closes the menu on outside click and Escape
     assert "https://cachecanary.com/litellm/" in (SITE / "llms.txt").read_text()
 
 
