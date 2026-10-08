@@ -143,7 +143,9 @@ Everything runs on your machine or CI runner. Nothing is sent anywhere. `probe` 
 
 ## What's next
 
-A hosted dashboard: cache hit rate and wasted spend per app, an alert when the rate drops, and the reason for each miss. It would run inside your own AWS account, so prompts never leave it. If you'd use that, email [hello@cachecanary.com](mailto:hello@cachecanary.com).
+A hosted dashboard: cache hit rate and wasted spend per app, an alert when the rate drops, and the reason for each miss. It would run inside your own AWS account, so prompts never leave it.
+
+Using CacheCanary? I'd love to hear how it's going, good or bad, and whether you'd want the dashboard. Email me at [hello@cachecanary.com](mailto:hello@cachecanary.com). I read every message.
 
 Vertex AI support is also planned.
 

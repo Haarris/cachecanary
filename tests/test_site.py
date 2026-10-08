@@ -476,3 +476,14 @@ def test_langchain_chunks_clears_whole_batches():
 
 def test_langchain_live_script_uses_the_page_code():
     assert _langchain_chunks_code() in (SITE.parent / "scripts" / "live_langchain_checks.py").read_text()
+
+
+def test_contact_line_for_users_everywhere():
+    """Every page and the README invite current users to write, and nothing claims the dashboard already exists."""
+    line = "Using CacheCanary? I'd love to hear how it's going, good or bad, and whether you'd want the dashboard."
+    for html in (INDEX,) + GUIDES:
+        main = html.split("<main>")[1].split("</main>")[0]
+        assert line in main.replace("&#39;", "'") and 'href="mailto:hello@cachecanary.com"' in main
+    readme = (SITE.parent / "README.md").read_text()
+    assert line in readme
+    assert "It runs inside your own AWS account" not in INDEX  # the dashboard isn't built yet
