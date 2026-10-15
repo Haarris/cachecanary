@@ -1,6 +1,6 @@
 """On-demand Amazon Bedrock list prices for Claude input tokens, used to put dollars on cache misses.
 
-Source: the AWS Price List file for AmazonBedrockFoundationModels (checked 2026-10-06), on-demand
+Source: the AWS Price List file for AmazonBedrockFoundationModels (checked 2026-10-15; file published 2026-10-12), on-demand
 "standard" tier. The prices were identical in us-east-1, us-west-2, eu-central-1 and ap-northeast-1.
 Global endpoints ('global.' model IDs) are billed at these prices; regional and geo cross-region
 endpoints ('us.', 'eu.', ... or a bare 'anthropic.' ID) cost 10% more for these models.
@@ -47,10 +47,11 @@ GLOBAL_PRICES: dict[str, Rates] = {
     "claude-opus-4-7": _rates(5),
     "claude-opus-4-6": _rates(5),
     "claude-opus-4-5": _rates(5),
-    "claude-sonnet-5-5": _rates(2),
+    "claude-sonnet-5-5": _rates(2, 0.05),
     "claude-sonnet-5": _rates(2),
     "claude-sonnet-4-6": _rates(3),
     "claude-sonnet-4-5": _rates(3),
+    "claude-haiku-5-5": _rates(0.1),
     "claude-haiku-4-5": _rates(1),
     "claude-sonnet-4": _rates(3),
     "claude-opus-4-1": _rates(15),

@@ -37,7 +37,7 @@ def test_only_claude_3_models_are_unpriced():
     assert {k for k in CLAUDE_LIMITS if k not in pricing.GLOBAL_PRICES} == {"claude-3-7-sonnet", "claude-3-5-sonnet"}
 
 
-# Rows copied from the AWS Price List (AmazonBedrockFoundationModels, us-east-1, on-demand, 2026-10-06),
+# Rows copied from the AWS Price List (AmazonBedrockFoundationModels, us-east-1, on-demand, published 2026-10-12, checked 2026-10-15),
 # USD per million tokens: (input, cache read, 5m write, 1h write).
 AWS_ROWS = {
     (SONNET_GLOBAL, "global"): (3, 0.3, 3.75, 6),
@@ -50,7 +50,10 @@ AWS_ROWS = {
     ("us.anthropic.claude-mythos-5", "regional"): (11, 1.1, 13.75, 22),
     ("us.anthropic.claude-haiku-4-5-20251001-v1:0", "regional"): (1.1, 0.11, 1.375, 2.2),
     ("global.anthropic.claude-haiku-4-5-20251001-v1:0", "global"): (1, 0.1, 1.25, 2),
-    ("global.anthropic.claude-sonnet-5-5", "global"): (2, 0.2, 2.5, 4),
+    ("global.anthropic.claude-sonnet-5-5", "global"): (2, 0.1, 2.5, 4),
+    ("us.anthropic.claude-sonnet-5-5", "regional"): (2.2, 0.11, 2.75, 4.4),
+    ("global.anthropic.claude-haiku-5-5", "global"): (0.1, 0.01, 0.125, 0.2),
+    ("us.anthropic.claude-haiku-5-5", "regional"): (0.11, 0.011, 0.1375, 0.22),
     ("us.anthropic.claude-sonnet-5", "regional"): (2.2, 0.22, 2.75, 4.4),
     ("us.anthropic.claude-opus-4-7", "regional"): (5.5, 0.55, 6.875, 11),
     ("global.anthropic.claude-opus-4-5-20251101-v1:0", "global"): (5, 0.5, 6.25, 10),
@@ -280,6 +283,9 @@ from cachecanary.request import normalize  # noqa: E402
     ("anthropic.claude-3-5-sonnet-20241022-v2:0", "claude-3-5-sonnet"),
     ("us.anthropic.claude-opus-5-5", "claude-opus-5-5"),
     ("us.anthropic.claude-opus-5", "claude-opus-5"),
+    ("global.anthropic.claude-haiku-5-5", "claude-haiku-5-5"),
+    ("us.anthropic.claude-haiku-5-5", "claude-haiku-5-5"),
+    ("us.anthropic.claude-haiku-4-5-20251001-v1:0", "claude-haiku-4-5"),
     ("arn:aws:bedrock:us-west-2:1:inference-profile/us.anthropic.claude-sonnet-4-6", "claude-sonnet-4-6"),
     ("us.anthropic.claude-opus-4-9", None),          # a future model must not borrow Opus 4's rules
     ("us.anthropic.claude-sonnet-4-7-20270101-v1:0", None),
@@ -314,7 +320,7 @@ def test_1h_on_legacy_is_a_warning_and_on_3_7_an_error():
     assert "ttl-unverified" not in _lint_codes("us.anthropic.claude-sonnet-4-6", "1h")
 
 
-# AWS Price List rows (us-east-1, on-demand, 2026-10-06): legacy models, same price on every endpoint.
+# AWS Price List rows (us-east-1, on-demand, published 2026-10-12, checked 2026-10-15): legacy models, same price on every endpoint.
 @pytest.mark.parametrize("model,expected", [
     ("us.anthropic.claude-sonnet-4-20250514-v1:0", (3, 0.3, 3.75)),
     ("global.anthropic.claude-sonnet-4-20250514-v1:0", (3, 0.3, 3.75)),

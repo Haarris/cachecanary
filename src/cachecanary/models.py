@@ -1,6 +1,6 @@
 """Explicit prompt-caching limits per Claude model on Amazon Bedrock.
 
-Source: AWS docs "Prompt caching for faster model inference" (checked 2026-10-05).
+Source: AWS docs "Prompt caching for faster model inference" (checked 2026-10-15).
 Keep this table current; new model IDs are the most common reason libraries
 silently stop sending cache checkpoints.
 """
@@ -20,6 +20,7 @@ class CacheLimits:
 # Keyed by the base model name as it appears inside Bedrock model IDs / profile IDs.
 CLAUDE_LIMITS: dict[str, CacheLimits] = {
     "claude-sonnet-5-5": CacheLimits(512, 4, True),
+    "claude-haiku-5-5": CacheLimits(512, 4, True),
     "claude-opus-5-5": CacheLimits(512, 4, True),
     "claude-fable-5-1": CacheLimits(512, 4, True),
     "claude-mythos-5-1": CacheLimits(512, 4, True),

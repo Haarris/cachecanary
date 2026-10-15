@@ -99,6 +99,13 @@ def test_haiku_needs_4096_tokens():
     assert "prefix-too-short" in rules(lint.lint(normalize(req, HAIKU)))
 
 
+def test_haiku_5_5_caches_from_512_tokens():
+    # Haiku 5.5 needs 512 tokens, not Haiku 4.5's 4,096 (AWS prompt-caching table, Oct 2026).
+    req = converse_request(system_text="You are a careful assistant. " * 200)  # ~1.4k tokens
+    assert "prefix-too-short" not in rules(lint.lint(normalize(req, "global.anthropic.claude-haiku-5-5")))
+    assert "unknown-model" not in rules(lint.lint(normalize(req, "global.anthropic.claude-haiku-5-5")))
+
+
 def test_dynamic_date_in_prefix_warns():
     req = converse_request(system_text=LONG_SYSTEM + " Today's date is 2026-10-05.")
     assert "dynamic-in-prefix" in rules(lint.lint(normalize(req)))
