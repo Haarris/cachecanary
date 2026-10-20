@@ -113,7 +113,7 @@ export LANGFUSE_SECRET_KEY=sk-lf-...
 # EU: https://cloud.langfuse.com, or your own server
 export LANGFUSE_HOST=https://us.cloud.langfuse.com
 cachecanary langfuse --since 7d --environment production</pre>
-<p>Use the API keys of the Langfuse project you want to check. CacheCanary asks Langfuse only for token counts, model names and timestamps, never prompts or outputs. It checks each call's numbers against its total, fixes the cases below, and tells you how many calls it fixed. Add <code>--min-hit 0.8</code> to fail when the hit rate drops under 80%.</p>
+<p>Use the API keys of the Langfuse project you want to check. CacheCanary uses only token counts, model names and timestamps, and stores nothing. On Langfuse v4 it asks only for those, so prompts and outputs aren't downloaded; older self-hosted servers send whole records, and CacheCanary ignores the rest. It checks each call's numbers against its total, fixes the cases below, and tells you how many calls it fixed. Add <code>--min-hit 0.8</code> to fail when the hit rate drops under 80%.</p>
 
 <h2>What I found</h2>
 <p>Every setup below made the same two calls to Bedrock: the first wrote 5,848 tokens to the cache, the second read them back, and each had 10 more tokens of new input and 4 of output. So the right answer is the same for all of them: half the cached part was read, a 50% hit rate.</p>

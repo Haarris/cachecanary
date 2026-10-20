@@ -16,7 +16,7 @@ the Vercel AI SDK source, Oct 2026):
 - Strands also sends `cache_write_input_tokens`, which Langfuse stores unchanged (before Strands
   1.54.0 it is the only cache write count).
 
-Two known sources send numbers that don't add up, and Langfuse stores them as sent:
+Two known sources end up with stored numbers that don't add up (Langfuse only logs a warning, issue #10592):
 Strands before 1.54.0 reported Bedrock's already-uncached input, which Langfuse then reduced by the
 cache counts again (often to 0, so the cache looks perfect), and LiteLLM's `langfuse` callback
 leaves cache writes inside `input` as well as reporting them separately. When a generation carries
@@ -48,7 +48,8 @@ V2_PATH = "/api/public/v2/observations"
 V1_PATH = "/api/public/observations"
 V2_PAGE_SIZE = 1000  # API maximum
 V1_PAGE_SIZE = 100   # API maximum
-# Only what the report needs: no prompts, outputs or metadata are requested.
+# Only what the report needs: the v2 API returns no prompts, outputs or metadata. (The v1 fallback can't select
+# fields and returns whole observations; only type, model, name, environment and usageDetails are read.)
 V2_FIELDS = "core,basic,model,usage"
 
 READ_KEYS = ("input_cache_read", "input_cached_tokens", "cache_read_input_tokens")

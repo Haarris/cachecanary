@@ -118,7 +118,7 @@
   <li><b>Install it</b> with <code>pip install cachecanary</code>. It runs on your laptop or in GitHub Actions. No account, no signup, no server.</li>
   <li><b>Check a request:</b> save it as a JSON file and run one command. No AWS access needed.</li>
   <li><b>See your real hit rate and what misses cost:</b> copy your Bedrock log files from S3 with one AWS command, then point CacheCanary at the folder. If you use Langfuse, it can read the same numbers from your traces instead.</li>
-  <li><b>Safe to try:</b> <code>lint</code>, <code>diff</code> and <code>logs</code> only read files, and <code>langfuse</code> only reads token counts from your own Langfuse project. Only <code>probe</code> calls Bedrock, and only with your own AWS credentials.</li>
+  <li><b>Safe to try:</b> <code>lint</code>, <code>diff</code> and <code>logs</code> only read files, and <code>langfuse</code> only reads from your own Langfuse project. Only <code>probe</code> calls Bedrock, and only with your own AWS credentials.</li>
 </ul>
 
 <h2 id="how">How prompt caching works, in 30 seconds</h2>
@@ -141,7 +141,7 @@ List prices: Amazon Bedrock on-demand, Oct 2026 (global. IDs at list, others +10
 <p class="note">Here only half the calls used the cache, below the 80% target, so the command fails and shows what the misses cost on this small sample. Run it as a scheduled CI job and that failure becomes your alert. Prices are Bedrock's published list prices; pass <code>--price</code> if you pay a different rate.</p>
 <p>Already trace your agents with Langfuse? You can skip the logging. Langfuse stores the cache counts for every model call, so one command reads your hit rate from there:</p>
 <div class="term"><pre><span class="p">$</span> cachecanary langfuse --since 7d --environment production --min-hit 0.8</pre></div>
-<p class="note">It needs your Langfuse project's API keys and reads only token counts, never prompts or outputs. Some setups store numbers in Langfuse that don't add up, like older Strands versions, which make the cache look perfect. CacheCanary fixes those; the <a href="/langfuse/">Langfuse guide</a> shows what it found.</p>
+<p class="note">It needs your Langfuse project's API keys and uses only the token counts. On Langfuse v4 it doesn't download prompts or outputs at all. Some setups store numbers in Langfuse that don't add up, like older Strands versions, which make the cache look perfect. CacheCanary fixes those; the <a href="/langfuse/">Langfuse guide</a> shows what it found.</p>
 
 <h3>2. Tells you why a request missed the cache</h3>
 <p>Save a request your app sends to Bedrock as a JSON file. With boto3's Converse API that's one line:</p>

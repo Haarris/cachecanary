@@ -145,9 +145,9 @@ export LANGFUSE_HOST=https://us.cloud.langfuse.com   # or https://cloud.langfuse
 cachecanary langfuse --since 7d --environment production --min-hit 0.8
 ```
 
-It asks Langfuse only for token counts, model names and timestamps, never prompts or outputs. It works with Langfuse Cloud and self-hosted v3 and v4 (on v4 it uses the faster v2 observations API).
+It uses only token counts, model names and timestamps, and stores nothing. On Langfuse v4 (Cloud and self-hosted) it asks the v2 observations API for just those fields, so prompts and outputs aren't downloaded. Older self-hosted servers only have the v1 API, which sends whole records; CacheCanary ignores everything except the token counts.
 
-Langfuse stores the counts the way each integration sends them, and some don't add up. Strands before 1.54 sent Bedrock's input count after the cache was already taken out, and Langfuse takes the cache out again, so the input often shows as 0 and the cache looks perfect. LiteLLM's `langfuse` callback leaves cache writes inside the input count as well as reporting them on their own. When a call has a total that was really sent, CacheCanary checks the parts against it, rebuilds the uncached input from the total (Bedrock's total includes the cached tokens), and tells you how many calls it fixed.
+Depending on the integration, the counts stored in Langfuse don't always add up. Strands before 1.54 sent Bedrock's input count after the cache was already taken out, and Langfuse takes the cache out again, so the input often shows as 0 and the cache looks perfect. LiteLLM's `langfuse` callback leaves cache writes inside the input count as well as reporting them on their own. When a call has a total that was really sent, CacheCanary checks the parts against it, rebuilds the uncached input from the total (Bedrock's total includes the cached tokens), and tells you how many calls it fixed.
 
 This is the output on real Langfuse records in this repo. They came from Strands 1.61 and 1.53, LiteLLM (both Langfuse integrations) and LangChain, each making one cache write and one cache read:
 
@@ -170,7 +170,7 @@ To run the live checks yourself, use an AWS Region without production traffic: `
 
 ## Privacy
 
-Everything runs on your machine or CI runner. Nothing is sent anywhere. `probe` only calls your own Bedrock endpoint with your own credentials, and `langfuse` only reads token counts from your own Langfuse project with your own keys.
+Everything runs on your machine or CI runner. Nothing is sent anywhere. `probe` only calls your own Bedrock endpoint with your own credentials, and `langfuse` only reads from your own Langfuse project with your own keys and stores nothing.
 
 ## Limits
 

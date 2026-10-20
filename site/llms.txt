@@ -2,7 +2,7 @@
 
 > CacheCanary is a free, open-source (Apache-2.0) Python CLI and GitHub Action that catches Claude prompt caching breaking silently on Amazon Bedrock. It shows the cache hit rate and what misses cost from Bedrock invocation logs or Langfuse traces, explains why one request missed the previous request's cache, and checks saved requests in CI. It runs locally and sends nothing anywhere.
 
-Install with `pip install cachecanary`. Commands: `lint` (check one saved Converse or InvokeModel request), `diff` (explain why the second of two requests missed the first one's cache), `probe` (send a request twice to Bedrock and confirm the second reads from cache), `logs` (hit rate, input cost and dollars lost to misses from Bedrock invocation logs or a folder of them), `langfuse` (the same from the generations a Langfuse project already records, read through the Langfuse API: token counts only, no prompts).
+Install with `pip install cachecanary`. Commands: `lint` (check one saved Converse or InvokeModel request), `diff` (explain why the second of two requests missed the first one's cache), `probe` (send a request twice to Bedrock and confirm the second reads from cache), `logs` (hit rate, input cost and dollars lost to misses from Bedrock invocation logs or a folder of them), `langfuse` (the same from the generations a Langfuse project already records, read through the Langfuse API: uses token counts only; on Langfuse v4 prompts and outputs are not downloaded).
 
 What it checks, each verified against live Amazon Bedrock (Claude Sonnet 4.6, us-west-2, October 2026):
 

@@ -356,7 +356,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_logs)
 
     p = sub.add_parser("langfuse", help="cache hit rates from the generations in a Langfuse project",
-                       description="Reads token counts (no prompts or outputs) for the project's generations through "
+                       description="Reads the token counts of the project's generations through "
                                    "the Langfuse public API. Keys come from LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY; "
                                    "the host from --host, LANGFUSE_HOST or LANGFUSE_BASE_URL (default "
                                    f"{langfuse.DEFAULT_HOST}).")
