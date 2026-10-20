@@ -1,3 +1,3 @@
 """CacheCanary: know the moment your Claude prompt cache breaks on Amazon Bedrock."""
 
-__version__ = "0.3.2"
+__version__ = "0.4.0"

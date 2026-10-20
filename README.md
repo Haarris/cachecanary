@@ -17,7 +17,7 @@ Website: [cachecanary.com](https://cachecanary.com). It has guides that show exa
 
 What that costs: the cached part of each request becomes about 10x more expensive, because cache reads are billed at a tenth of the input price. For one agent with a 10,000-token prompt and 100,000 requests a month, that's roughly $2,700 a month extra at Anthropic's list price for Claude Sonnet 4.6 ($3 per million input tokens; Bedrock prices vary by region).
 
-CacheCanary is a small CLI and GitHub Action for this. It checks your requests in CI, tells you why a request missed the cache, and reads your Bedrock logs to show hit rates in production.
+CacheCanary is a small CLI and GitHub Action for this. It checks your requests in CI, tells you why a request missed the cache, and reads your Bedrock logs or your Langfuse traces to show hit rates in production.
 
 ## Install
 
@@ -57,6 +57,7 @@ The last one is easy to miss. The same prompt caches fine on Sonnet 4.6 (minimum
 | `diff previous.json next.json` | Explains why the second request missed the first one's cache | the cached part changed |
 | `probe request.json --model ID [--region R] [--stream]` | Sends the request twice and checks the second one read from cache | nothing was read from cache |
 | `logs files-or-folders... [--by model\|principal] [--min-hit 0.5] [--price 3]` | Hit rate and input cost per model or IAM principal from Bedrock invocation logs, plus how much the misses cost | a group is under the threshold |
+| `langfuse [--since 7d] [--environment E] [--by model\|name\|environment] [--min-hit 0.5] [--price 3]` | The same, from the generations your Langfuse project already records (no invocation logging needed) | a group is under the threshold |
 
 Exit code 2 means it couldn't run at all (bad file, no model access, no AWS credentials). `--json` and `--github` go before the command.
 
@@ -93,6 +94,16 @@ Problems show up as annotations on the pull request, plus a short table in the j
   with:
     command: probe
     args: tests/fixtures/agent_request.json --model us.anthropic.claude-sonnet-4-6 --region us-west-2
+
+# Reads last week's hit rate from Langfuse and fails under 80%. Good as a scheduled workflow.
+- uses: Haarris/cachecanary@v0
+  env:
+    LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+    LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+    LANGFUSE_HOST: https://us.cloud.langfuse.com
+  with:
+    command: langfuse
+    args: --since 7d --environment production --min-hit 0.8
 ```
 
 `args` takes the same arguments as the CLI, separated by spaces. Paths with spaces aren't supported.
@@ -124,20 +135,48 @@ How the dollars work:
 
 It reads S3 deliveries, CloudWatch exports and `aws logs filter-log-events` output, gzipped or not, including streamed responses. Bedrock logs InvokeModel calls under an inference profile ARN and Converse calls under the short model ID, so CacheCanary merges the two.
 
+## Hit rates from Langfuse
+
+If you trace your agents with [Langfuse](https://langfuse.com), you don't need invocation logging. Langfuse already stores the cache counts for every model call, and `langfuse` reads them through the Langfuse API:
+
+```bash
+export LANGFUSE_PUBLIC_KEY=pk-lf-...  LANGFUSE_SECRET_KEY=sk-lf-...
+export LANGFUSE_HOST=https://us.cloud.langfuse.com   # or https://cloud.langfuse.com (EU), or your own server
+cachecanary langfuse --since 7d --environment production --min-hit 0.8
+```
+
+It asks Langfuse only for token counts, model names and timestamps, never prompts or outputs. It works with Langfuse Cloud and self-hosted v3 and v4 (on v4 it uses the faster v2 observations API).
+
+Langfuse stores the counts the way each integration sends them, and some don't add up. Strands before 1.54 sent Bedrock's input count after the cache was already taken out, and Langfuse takes the cache out again, so the input often shows as 0 and the cache looks perfect. LiteLLM's `langfuse` callback leaves cache writes inside the input count as well as reporting them on their own. When a call has a total that was really sent, CacheCanary checks the parts against it, rebuilds the uncached input from the total (Bedrock's total includes the cached tokens), and tells you how many calls it fixed.
+
+This is the output on real Langfuse records in this repo. They came from Strands 1.61 and 1.53, LiteLLM (both Langfuse integrations) and LangChain, each making one cache write and one cache read:
+
+```text
+$ cachecanary langfuse --file tests/fixtures/langfuse_observations_2026-10.json --min-hit 0.8
+us.anthropic.claude-sonnet-4-6: hit 50% over 10 calls (read 29240, write 29240, uncached 100, no usage 0)  <-- below threshold
+  input cost $0.13 at list price; about $0.07 of it lost to cache misses (target: 80% hit rate)
+List prices: Amazon Bedrock on-demand, Oct 2026 (global. IDs at list, others +10%). Use --price for your own rate.
+Read 10 generations.
+2 generation(s): Langfuse's input count did not add up with the total that was sent, so the uncached input was rebuilt from the total (seen with Strands before 1.54 and LiteLLM's langfuse callback).
+```
+
+Only model calls (generations) are counted. Agent and chain spans can carry the summed usage of the calls under them, so counting them would count tokens twice. `--file` reads a saved observations API response instead of calling Langfuse.
+
 ## How it's tested
 
-The checks follow AWS's documented prompt-caching rules. The core behaviour was verified against live Amazon Bedrock: Converse and InvokeModel, streaming, both cache lifetimes (5 minutes and 1 hour), model minimums, prompt changes and the exact lookback limit (21 added blocks hit, 22 miss). Every check added in 0.3 was measured live first, and `scripts/live_v03_checks.py` re-runs those cases against Bedrock and compares CacheCanary's verdict with what Bedrock did (15 of 15 agreed in October 2026). Every check also has unit tests. The log reader is tested against real Bedrock invocation logs (redacted copies are in [tests/fixtures](https://github.com/Haarris/cachecanary/tree/main/tests/fixtures)).
+The checks follow AWS's documented prompt-caching rules. The core behaviour was verified against live Amazon Bedrock: Converse and InvokeModel, streaming, both cache lifetimes (5 minutes and 1 hour), model minimums, prompt changes and the exact lookback limit (21 added blocks hit, 22 miss). Every check added in 0.3 was measured live first, and `scripts/live_v03_checks.py` re-runs those cases against Bedrock and compares CacheCanary's verdict with what Bedrock did (15 of 15 agreed in October 2026). Every check also has unit tests. The log reader is tested against real Bedrock invocation logs (redacted copies are in [tests/fixtures](https://github.com/Haarris/cachecanary/tree/main/tests/fixtures)). The Langfuse reader is tested against records that Strands, LiteLLM and LangChain wrote into a real Langfuse 4.64 server, and against a production Langfuse Cloud project, where its numbers matched a separate recount for every model.
 
 To run the live checks yourself, use an AWS Region without production traffic: `python scripts/live_test.py --region <region>`.
 
 ## Privacy
 
-Everything runs on your machine or CI runner. Nothing is sent anywhere. `probe` only calls your own Bedrock endpoint with your own credentials.
+Everything runs on your machine or CI runner. Nothing is sent anywhere. `probe` only calls your own Bedrock endpoint with your own credentials, and `langfuse` only reads token counts from your own Langfuse project with your own keys.
 
 ## Limits
 
 - Token counts in `lint` are estimates. On English text Bedrock counted about 11% more than CacheCanary did, so near a model's minimum it warns you and suggests running `probe`.
 - Bedrock keeps cache counts inside the logged response body, and only bodies up to 100 KB are stored inline. Bigger ones show up as `unparsed` and aren't in the dollar figures.
+- `langfuse` can only check a call's counts when the integration sent a total. Calls with no cache fields at all are counted as uncached and listed in the output, because Langfuse can't tell "caching was off" from "the integration doesn't report cache tokens".
 - Dollar figures use list prices, which change. Batch, provisioned throughput and priority tiers aren't covered; use `--price` for those.
 - Bedrock only for now.
 

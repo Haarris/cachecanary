@@ -4,6 +4,7 @@
   cachecanary diff previous.json next.json [--model ID]
   cachecanary probe request.json --model ID [--region R] [--stream]
   cachecanary logs FILE_OR_FOLDER ... [--by model|principal|model+principal] [--min-hit 0.5] [--price 3]
+  cachecanary langfuse [--since 7d | --from DATE --to DATE] [--environment E] [--by model|name|environment]
 
 Exit codes: 0 ok, 1 caching problem found (use to gate CI), 2 could not run (bad input, AWS error).
 Add --github (before the command) for GitHub Actions annotations and a job summary.
@@ -11,11 +12,13 @@ Add --github (before the command) for GitHub Actions annotations and a job summa
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 
-from cachecanary import __version__, diff, lint, logs, pricing, probe
+from cachecanary import __version__, diff, langfuse, lint, logs, pricing, probe
 from cachecanary import github as gh
 from cachecanary.request import RequestError, normalize
 
@@ -163,6 +166,12 @@ def cmd_logs(args) -> int:
             except (OSError, UnicodeDecodeError, EOFError, json.JSONDecodeError) as exc:
                 raise InputError(f"could not read {path}: {exc}") from exc
     groups = logs.aggregate(records, by=args.by)
+    notes = [f"Skipped {stats.bad_lines} unreadable line(s)."] if stats.bad_lines else []
+    return _report(groups, args, "logs", "No invocation log records found.", notes)
+
+
+def _report(groups, args, source: str, empty: str, notes: list[str]) -> int:
+    """Hit rate and dollars per group, shared by `logs` and `langfuse`."""
     target = args.min_hit if args.min_hit is not None else DEFAULT_TARGET_HIT
     data, lines, failing = {}, [], False
     total_cost = total_lost = 0.0
@@ -177,7 +186,7 @@ def cmd_logs(args) -> int:
             flag, failing = "  <-- below threshold", True
         lines.append(f"{key}: hit {ratio:.0%} over {g.calls} calls "
                      f"(read {g.usage.cache_read}, write {g.usage.cache_write}, uncached {g.usage.uncached_input}, "
-                     f"unparsed {g.unparsed}){flag}")
+                     f"{'no usage' if source == 'langfuse' else 'unparsed'} {g.unparsed}){flag}")
         if g.usage.total_input == 0:
             continue
         if cost is None:
@@ -202,9 +211,11 @@ def cmd_logs(args) -> int:
     if any_priced and not args.price:
         lines.append("List prices: Amazon Bedrock on-demand, Oct 2026 (global. IDs at list, others +10%). "
                      "Use --price for your own rate.")
-    if stats.bad_lines:
-        lines.append(f"Skipped {stats.bad_lines} unreadable line(s).")
-    _emit(data, args.json, lines or ["No invocation log records found."])
+    lines.extend(notes)
+    if args.json:
+        print(json.dumps({"groups": data, "notes": notes} if source == "langfuse" else data, indent=2))
+    else:
+        print("\n".join(lines if data else [empty, *notes]))
     if args.github:
         rows = []
         for key, d in data.items():
@@ -216,11 +227,57 @@ def cmd_logs(args) -> int:
             rows.append([key, d["calls"], f"{d['hit_ratio']:.0%}", d["cache_read"], d["cache_write"], d["uncached_input"],
                          d["unparsed"], _money(d["input_cost_usd"]) if priced else "",
                          _money(d["lost_usd"]) if priced else "", "❌" if below else ""])
-        gh.append_summary("### CacheCanary logs\n\n" + (gh.table(
-            ["group", "calls", "hit rate", "read", "write", "uncached", "unparsed", "input cost",
-             f"lost vs {target:.0%} hit", "below threshold"], rows)
-            if rows else "No invocation log records found."))
+        summary = gh.table(["group", "calls", "hit rate", "read", "write", "uncached",
+                            "no usage" if source == "langfuse" else "unparsed", "input cost",
+                            f"lost vs {target:.0%} hit", "below threshold"], rows) if rows else empty
+        gh.append_summary(f"### CacheCanary {source}\n\n" + summary + "".join(f"\n\n{n}" for n in notes))
     return EXIT_PROBLEM if failing else EXIT_OK
+
+
+def cmd_langfuse(args) -> int:
+    if args.file:
+        observations, api, capped = [], "file", False
+        for path in args.file:
+            observations.extend(langfuse.iter_file(Path(path)))
+        window = ""
+    else:
+        now = datetime.now(timezone.utc)
+        to_time = args.to or now
+        from_time = args.from_ or to_time - args.since
+        if from_time >= to_time:
+            raise InputError("--from must be earlier than --to")
+        client = langfuse.Client(args.host or os.environ.get("LANGFUSE_HOST") or os.environ.get("LANGFUSE_BASE_URL"),
+                                 os.environ.get("LANGFUSE_PUBLIC_KEY", ""), os.environ.get("LANGFUSE_SECRET_KEY", ""),
+                                 progress=langfuse.stderr_progress)
+        try:
+            fetched = client.fetch_generations(langfuse.iso(from_time), langfuse.iso(to_time) if args.to else None,
+                                               args.environment, args.max_calls)
+        finally:
+            if sys.stderr.isatty():
+                print(file=sys.stderr)
+        observations, api, capped = fetched.observations, fetched.api, fetched.capped
+        window = f" from {langfuse.iso(from_time)} to {langfuse.iso(to_time)}"
+    groups, q = langfuse.aggregate(observations, by=args.by)
+    notes = []
+    if q.generations:
+        notes.append(f"Read {q.generations:,} generations{window}" + (f" (Langfuse API {api})" if api != "file" else "") + ".")
+    if capped:
+        notes.append(f"Stopped at --max-calls {args.max_calls:,}; older generations in the window were not read.")
+    if q.corrected:
+        notes.append(f"{q.corrected:,} generation(s): Langfuse's input count did not add up with the total that was sent, "
+                     "so the uncached input was rebuilt from the total (seen with Strands before 1.54 and LiteLLM's "
+                     "langfuse callback).")
+    if q.total_mismatch:
+        notes.append(f"{q.total_mismatch:,} generation(s) carry a total smaller than their parts; their counts were used as sent.")
+    if q.no_cache_fields:
+        notes.append(f"{q.no_cache_fields:,} generation(s) have no cache fields at all: caching was not used for them, "
+                     "the integration does not report cache tokens, or Langfuse estimated the tokens itself.")
+    if q.no_usage:
+        notes.append(f"{q.no_usage:,} generation(s) have no token counts.")
+    if q.skipped_other_types:
+        notes.append(f"Ignored {q.skipped_other_types:,} non-generation observation(s) (agent and chain spans can repeat "
+                     "the usage of the calls under them).")
+    return _report(groups, args, "langfuse", "No generations found in Langfuse for this window.", notes)
 
 
 def _unit(value: str) -> float:
@@ -238,6 +295,30 @@ def _price(value: str) -> float:
     if not 0 < f < 1000:  # also rejects nan and inf
         raise argparse.ArgumentTypeError("must be a price in USD per million input tokens, e.g. 3")
     return f
+
+
+def _since(value: str):
+    try:
+        return langfuse.parse_since(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from None
+
+
+def _when(value: str):
+    try:
+        return langfuse.parse_time(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from None
+
+
+def _positive(value: str) -> int:
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("must be a whole number") from None
+    if n < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return n
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -273,6 +354,27 @@ def build_parser() -> argparse.ArgumentParser:
                    "also the target for the dollars lost figure (default 0.9)")
     p.add_argument("--price", type=_price, help="your input price in USD per million tokens, instead of list prices")
     p.set_defaults(func=cmd_logs)
+
+    p = sub.add_parser("langfuse", help="cache hit rates from the generations in a Langfuse project",
+                       description="Reads token counts (no prompts or outputs) for the project's generations through "
+                                   "the Langfuse public API. Keys come from LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY; "
+                                   "the host from --host, LANGFUSE_HOST or LANGFUSE_BASE_URL (default "
+                                   f"{langfuse.DEFAULT_HOST}).")
+    p.add_argument("--host", help="Langfuse URL, e.g. https://us.cloud.langfuse.com or your self-hosted URL")
+    window = p.add_mutually_exclusive_group()
+    window.add_argument("--since", type=_since, default=langfuse.parse_since("7d"),
+                        help="how far back to read, e.g. 24h, 7d, 2w (default 7d)")
+    window.add_argument("--from", dest="from_", type=_when, help="start of the window (date or ISO time, UTC)")
+    p.add_argument("--to", type=_when, help="end of the window (default now)")
+    p.add_argument("--environment", action="append", help="only this Langfuse environment (repeatable)")
+    p.add_argument("--by", choices=["model", "name", "environment"], default="model")
+    p.add_argument("--min-hit", type=_unit, help="fail if any group's hit ratio is below this (0-1); "
+                   "also the target for the dollars lost figure (default 0.9)")
+    p.add_argument("--price", type=_price, help="your input price in USD per million tokens, instead of list prices")
+    p.add_argument("--max-calls", type=_positive, default=20000,
+                   help="stop after this many generations (default 20000)")
+    p.add_argument("--file", action="append", help="read a saved observations API response instead of calling Langfuse")
+    p.set_defaults(func=cmd_langfuse)
     return parser
 
 
@@ -280,7 +382,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (InputError, RequestError, probe.ProbeError) as exc:
+    except (InputError, RequestError, probe.ProbeError, langfuse.LangfuseError) as exc:
         print(f"cachecanary: error: {exc}", file=sys.stderr)
         if getattr(args, "github", False):
             print(gh.annotation("error", str(exc), title="CacheCanary could not run"))

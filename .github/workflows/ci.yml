@@ -51,6 +51,28 @@ jobs:
           command: diff
           args: examples/request_bad.json examples/request_next.json
 
+      - name: langfuse on the saved real records (must fail the 80% target)
+        id: langfuse_file
+        continue-on-error: true
+        uses: ./
+        with:
+          command: langfuse
+          args: --file tests/fixtures/langfuse_observations_2026-10.json --min-hit 0.8
+
+      # Proves Langfuse settings given as step env reach the action: the host below is unreachable on purpose,
+      # so the step must fail with "could not reach Langfuse at http://127.0.0.1:9".
+      - name: langfuse reads keys and host from step env (must fail, unreachable host)
+        id: langfuse_env
+        continue-on-error: true
+        uses: ./
+        env:
+          LANGFUSE_PUBLIC_KEY: pk-lf-ci
+          LANGFUSE_SECRET_KEY: sk-lf-ci
+          LANGFUSE_HOST: http://127.0.0.1:9
+        with:
+          command: langfuse
+          args: --since 1h
+
       - name: unknown command (must fail)
         id: bad_command
         continue-on-error: true
@@ -63,7 +85,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for o in "${{ steps.lint_short.outcome }}" "${{ steps.diff_changed.outcome }}" "${{ steps.bad_command.outcome }}"; do
+          for o in "${{ steps.lint_short.outcome }}" "${{ steps.diff_changed.outcome }}" "${{ steps.bad_command.outcome }}" \
+                   "${{ steps.langfuse_file.outcome }}" "${{ steps.langfuse_env.outcome }}"; do
             if [ "$o" != "failure" ]; then echo "::error::expected failure, got '$o'"; exit 1; fi
           done
           echo "All expected failures happened."

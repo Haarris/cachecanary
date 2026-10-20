@@ -7,7 +7,7 @@ branding:
 
 inputs:
   command:
-    description: "One of: lint, diff, probe, logs"
+    description: "One of: lint, diff, probe, logs, langfuse"
     required: true
   args:
     description: >
@@ -38,8 +38,8 @@ runs:
         CC_ARGS: ${{ inputs.args }}
       run: |
         case "$CC_COMMAND" in
-          lint|diff|probe|logs) ;;
-          *) echo "::error title=CacheCanary::unknown command '$CC_COMMAND' (use lint, diff, probe or logs)"; exit 2 ;;
+          lint|diff|probe|logs|langfuse) ;;
+          *) echo "::error title=CacheCanary::unknown command '$CC_COMMAND' (use lint, diff, probe, logs or langfuse)"; exit 2 ;;
         esac
         read -r -a CC_ARGV <<< "$CC_ARGS"
         cachecanary --github "$CC_COMMAND" "${CC_ARGV[@]}"

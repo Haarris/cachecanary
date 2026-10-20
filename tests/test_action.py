@@ -117,3 +117,18 @@ def test_license_files_and_metadata():
     assert "Copyright 2026 Haris Farooq" in (ROOT / "NOTICE").read_text()
     text = (ROOT / "pyproject.toml").read_text()
     assert 'license = "Apache-2.0"' in text and 'license-files = ["LICENSE", "NOTICE"]' in text
+
+
+def test_action_runs_langfuse(tmp_path):
+    res = run_action("langfuse", "--file tests/fixtures/langfuse_observations_2026-10.json --min-hit 0.8", tmp_path)
+    assert res.returncode == 1, res.stderr
+    assert "::error title=CacheCanary%3A low cache hit rate::us.anthropic.claude-sonnet-4-6" in res.stdout
+    assert "### CacheCanary langfuse" in (tmp_path / "s.md").read_text()
+
+
+def test_action_langfuse_reads_env_settings(tmp_path, monkeypatch):
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk")
+    monkeypatch.setenv("LANGFUSE_HOST", "http://127.0.0.1:9")
+    res = run_action("langfuse", "--since 1h", tmp_path)
+    assert res.returncode == 2 and "could not reach Langfuse at http://127.0.0.1:9" in res.stdout + res.stderr
