@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prompt cache hit rate from Langfuse: what the numbers really say</title>
+<meta name="description" content="Langfuse already stores the cache counts for every model call. I traced Strands, LiteLLM and LangChain into a real Langfuse server: Strands before 1.54 makes the cache look perfect and LiteLLM's callback counts cache writes twice. Here is how to read your real hit rate.">
+<meta property="og:title" content="Prompt cache hit rates from Langfuse">
+<meta property="og:description" content="Read your real Bedrock cache hit rate from the traces you already have, and the two setups where Langfuse's numbers don't add up.">
+<meta property="og:url" content="https://cachecanary.com/langfuse/">
+<meta property="og:type" content="article">
+<meta property="og:image" content="https://cachecanary.com/og-langfuse.png?v=1">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:image:alt" content="Prompt cache hit rates from Langfuse, by CacheCanary.">
+<meta property="og:site_name" content="CacheCanary">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://cachecanary.com/langfuse/">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/style.css">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "TechArticle",
+ "headline": "Prompt cache hit rates from Langfuse",
+ "description": "Langfuse already stores the cache counts for every model call. I traced Strands, LiteLLM and LangChain into a real Langfuse server: Strands before 1.54 makes the cache look perfect and LiteLLM's callback counts cache writes twice. Here is how to read your real hit rate.",
+ "image": "https://cachecanary.com/og-langfuse.png?v=1",
+ "datePublished": "2026-10-20",
+ "dateModified": "2026-10-20",
+ "author": {
+  "@type": "Person",
+  "name": "Haris Farooq",
+  "url": "https://www.linkedin.com/in/haris-farooq",
+  "sameAs": [
+   "https://www.linkedin.com/in/haris-farooq",
+   "https://github.com/Haarris",
+   "https://harisfarooq.substack.com"
+  ]
+ },
+ "publisher": {
+  "@type": "Organization",
+  "name": "CacheCanary",
+  "url": "https://cachecanary.com/",
+  "logo": {
+   "@type": "ImageObject",
+   "url": "https://cachecanary.com/icon-192.png"
+  }
+ },
+ "mainEntityOfPage": "https://cachecanary.com/langfuse/",
+ "url": "https://cachecanary.com/langfuse/"
+}
+</script>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "BreadcrumbList",
+ "itemListElement": [
+  {
+   "@type": "ListItem",
+   "position": 1,
+   "name": "CacheCanary",
+   "item": "https://cachecanary.com/"
+  },
+  {
+   "@type": "ListItem",
+   "position": 2,
+   "name": "Langfuse guide",
+   "item": "https://cachecanary.com/langfuse/"
+  }
+ ]
+}
+</script>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a class="brand" href="/" aria-label="CacheCanary home">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 29.2h26" stroke="#8a5a2b" stroke-width="1.8" stroke-linecap="round"/><path d="M14.6 24.4l-.8 4.6M18.2 24l.4 5" stroke="#e8892b" stroke-width="1.4" stroke-linecap="round"/><path d="M10.5 19.5L2.2 25.4l4.4.4L12.8 22z" fill="#d9a514"/><ellipse cx="15.5" cy="18.6" rx="8.4" ry="6.2" transform="rotate(-24 15.5 18.6)" fill="#f2c230"/><circle cx="21.8" cy="11.2" r="4.7" fill="#f2c230"/><path d="M26 10l4.4 1.6-4.4 1.8z" fill="#e8892b"/><circle cx="23.2" cy="10.4" r="1.1" fill="#1d1d1b"/><path d="M9.6 19.6c2.2-4.4 6.8-5.6 9.6-4.2-1.2 3.8-5.4 6.4-9.6 4.2z" fill="#d9a514"/></svg>
+    CacheCanary
+  </a>
+  <nav>
+    <a href="/">Home</a>
+    <details class="guides">
+      <summary>Guides</summary>
+      <div class="menu">
+        <a href="/litellm/">LiteLLM</a>
+        <a href="/strands/">Strands Agents</a>
+        <a href="/langchain/">LangChain</a>
+        <a href="/langfuse/">Langfuse</a>
+        <a href="/#guides">All guides</a>
+      </div>
+    </details>
+    <a href="https://github.com/Haarris/cachecanary">GitHub</a>
+  </nav>
+</header>
+
+<main>
+<h1>Prompt cache hit rates from Langfuse</h1>
+
+<p class="lead">If you trace your agents with Langfuse, it already stores how many tokens each model call read from the cache and wrote to it. So you can see your real hit rate on Bedrock without turning on invocation logging. I traced Strands, LiteLLM and LangChain into a real Langfuse server (Langfuse 4.64, October 2026) and checked what it stores for the same two calls: one that writes the cache and one that reads it.</p>
+
+<p>The short version: most setups store the right numbers. Two don't. Strands before 1.54 makes the cache look perfect, and LiteLLM's <code>langfuse</code> callback counts cache writes twice. If you just add up Langfuse's numbers for those two, you get the wrong hit rate.</p>
+
+<h2>The setup I'd use</h2>
+<pre class="yaml">pip install cachecanary
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_SECRET_KEY=sk-lf-...
+# EU: https://cloud.langfuse.com, or your own server
+export LANGFUSE_HOST=https://us.cloud.langfuse.com
+cachecanary langfuse --since 7d --environment production</pre>
+<p>Use the API keys of the Langfuse project you want to check. CacheCanary asks Langfuse only for token counts, model names and timestamps, never prompts or outputs. It checks each call's numbers against its total, fixes the cases below, and tells you how many calls it fixed. Add <code>--min-hit 0.8</code> to fail when the hit rate drops under 80%.</p>
+
+<h2>What I found</h2>
+<p>Every setup below made the same two calls to Bedrock: the first wrote 5,848 tokens to the cache, the second read them back, and each had 10 more tokens of new input and 4 of output. So the right answer is the same for all of them: half the cached part was read, a 50% hit rate.</p>
+<div class="scroll">
+<table>
+  <thead><tr><th>Sent by</th><th>What Langfuse stored for the read call</th><th>Hit rate if you just add it up</th></tr></thead>
+  <tbody>
+    <tr><td>Strands 1.61</td><td>input 10, cache read 5,848</td><td>50% (right)</td></tr>
+    <tr><td>Strands 1.53 (and older)</td><td>input 0, cache read 5,848</td><td>100%</td></tr>
+    <tr><td>LiteLLM <code>langfuse</code> callback</td><td>input 10, cache read 5,848</td><td>33%</td></tr>
+    <tr><td>LiteLLM <code>langfuse_otel</code></td><td>input 10, cache read 5,848</td><td>50% (right)</td></tr>
+    <tr><td>LangChain (<code>ChatBedrockConverse</code>)</td><td>input 10, cache read 5,848</td><td>50% (right)</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="note">The LiteLLM callback's read call is fine; its write call is the one that's off (finding 2). CacheCanary gives 50% for all five.</p>
+
+<h3>1. Strands before 1.54 makes the cache look perfect</h3>
+<p>Two things go wrong, and both push the hit rate up:</p>
+<ul>
+  <li><b>The input shows as 0.</b> Bedrock reports its input count with the cached tokens already taken out. Strands sent that number to Langfuse as is, and Langfuse takes the cached tokens out again. So on every call that reads the cache, the input comes out as 0.</li>
+  <li><b>Cache writes go missing.</b> Strands reported cache writes only under <code>cache_write_input_tokens</code>, a name Langfuse doesn't recognise. Langfuse keeps the number but doesn't treat it as a cache write, and its price list has no price for it. A tool that reads Langfuse's usual cache fields never sees the writes.</li>
+</ul>
+<p>Together they show 100% in my test, where the truth is 50%. Every Strands version with cache tracking up to 1.53 does this; 1.54 (August 27, 2026) fixed both. Langfuse's own cost figure for those calls comes out low too, because it prices the same numbers.</p>
+<p>The total Strands sends is still right, though. Bedrock's total includes the cached tokens, so CacheCanary reads the writes from the name Strands used and rebuilds the real input as the total minus output, cache reads and cache writes.</p>
+
+<h3>2. LiteLLM's langfuse callback counts cache writes twice</h3>
+<p>On the call that writes the cache, LiteLLM's <code>langfuse</code> callback (LiteLLM 1.106) stores input as 5,858: the 10 new tokens plus the 5,848 written to the cache. It also stores those 5,848 again as the cache write. So the same tokens are counted twice, and the hit rate comes out at 33% instead of 50%. LiteLLM's other integration, <code>langfuse_otel</code>, stores the right numbers. If you can switch, switch.</p>
+<p>The callback also logs the model as <code>converse/us.anthropic.claude-sonnet-4-6</code>. CacheCanary takes LiteLLM's prefix off, so one model stays one row and a <code>global.</code> model keeps its lower price.</p>
+
+<h3>3. Agent steps repeat the numbers of the calls inside them</h3>
+<p>Strands puts the summed usage of a whole agent run on the agent step as well, and so does the Vercel AI SDK. Add up every step and you count each token twice. CacheCanary only counts the model calls (Langfuse calls them generations).</p>
+
+<h3>Smaller things</h3>
+<ul>
+  <li>When an integration sends no total, Langfuse makes one by adding up the other numbers. A total like that can't catch a mistake, so CacheCanary takes those calls as they are. Hand-written Langfuse calls often look like this.</li>
+  <li>If an integration sends no token counts at all, Langfuse estimates them from the text, with no cache numbers. Calls with no cache fields are counted as uncached, and the output tells you how many there were, because nobody can tell "caching was off" from "the integration doesn't report it".</li>
+  <li>On Langfuse v4 (Cloud and self-hosted), CacheCanary uses the faster v2 observations API. On older self-hosted servers it falls back to the v1 API, which is slower: it reads 100 calls at a time instead of 1,000.</li>
+  <li>Prices are Bedrock's list prices. A model name without an endpoint prefix is priced as an in-Region model. If you pay a different rate, add <code>--price</code>.</li>
+</ul>
+
+<h3>What Langfuse gets right</h3>
+<p>It stores the cache counts for every call, from almost every integration, and keeps the total the integration sent next to them. That total is what makes the fixes above possible. LangChain, LiteLLM's <code>langfuse_otel</code> and current Strands all store the right numbers.</p>
+
+<h2>Check your own project</h2>
+<p>Run it against your own project with the command above. To see the output first, the repo has the real records from the five setups in the table. This is the real output on them:</p>
+<div class="term"><pre><span class="p">$</span> cachecanary langfuse --file tests/fixtures/langfuse_observations_2026-10.json --min-hit 0.8
+us.anthropic.claude-sonnet-4-6: hit 50% over 10 calls (read 29240, write 29240, uncached 100, no usage 0)  <span class="e">&lt;-- below threshold</span>
+  input cost $0.13 at list price; about $0.07 of it lost to cache misses (target: 80% hit rate)
+List prices: Amazon Bedrock on-demand, Oct 2026 (global. IDs at list, others +10%). Use --price for your own rate.
+Read 10 generations.
+2 generation(s): Langfuse's input count did not add up with the total that was sent, so the uncached input was rebuilt from the total (seen with Strands before 1.54 and LiteLLM's langfuse callback).</pre></div>
+<p class="note">In plain words: across all ten calls, half the cached part was read, so the hit rate is 50%, under the 80% target, and the command fails. Two calls didn't add up in Langfuse (old Strands and the LiteLLM callback), and CacheCanary fixed them from their totals.</p>
+<p>To get an alert when your hit rate drops, run it on a schedule in GitHub Actions with your Langfuse keys as secrets. The setup is in the <a href="https://github.com/Haarris/cachecanary#github-action">README</a>.</p>
+
+<h2>How I tested this</h2>
+<p>I ran a real Langfuse 4.64 server with its official Docker setup. Strands 1.61.1 and 1.53.0, LiteLLM 1.106.0 (its <code>langfuse</code> callback and <code>langfuse_otel</code>) and langchain-aws 1.9.0 with Langfuse's LangChain handler each made two calls to a small local server standing in for Bedrock. That server returned the token counts from a <a href="https://github.com/strands-agents/sdk-python/issues/3546">real Bedrock capture</a>: 10 new input tokens, 4 output and 5,848 cached, 5,862 in total. Each library sent its traces to Langfuse the normal way, and I read them back through the Langfuse API. The records are in the repo, and the tests check that CacheCanary gives 50% for each setup. I also ran it on a production Langfuse Cloud project, and its numbers matched a separate count of the raw data for every model. The scripts are in the repo: <a href="https://github.com/Haarris/cachecanary/tree/main/scripts/langfuse_capture">langfuse_capture</a>.</p>
+<p>Framework guides: <a href="/litellm/">LiteLLM</a>, <a href="/strands/">Strands Agents</a> and <a href="/langchain/">LangChain</a>. More on why caching breaks on Bedrock: <a href="https://harisfarooq.substack.com/p/five-ways-claude-prompt-caching-quietly">Five ways Claude prompt caching quietly breaks on Amazon Bedrock</a>.</p>
+<p>Using CacheCanary? I'd love to hear how it's going, good or bad, and whether you'd want the dashboard. Email me at <a href="mailto:hello@cachecanary.com">hello@cachecanary.com</a>. I read every message.</p>
+</main>
+
+<footer>
+  CacheCanary is free and open source under the Apache 2.0 license. Made by <a href="https://www.linkedin.com/in/haris-farooq">Haris Farooq</a>, an engineer who runs Claude agents on Bedrock in production.<br>
+  <a href="https://github.com/Haarris/cachecanary">GitHub</a> · <a href="https://www.linkedin.com/in/haris-farooq">LinkedIn</a> · <a href="mailto:hello@cachecanary.com">hello@cachecanary.com</a>
+</footer>
+
+</div>
+<script src="/main.js" defer></script>
+</body>
+</html>

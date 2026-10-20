@@ -8,12 +8,13 @@ INDEX = (SITE / "index.html").read_text()
 LITELLM = (SITE / "litellm" / "index.html").read_text()
 STRANDS = (SITE / "strands" / "index.html").read_text()
 LANGCHAIN = (SITE / "langchain" / "index.html").read_text()
-GUIDES = (LITELLM, STRANDS, LANGCHAIN)
-PAGES = ("index.html", "404.html", "litellm/index.html", "strands/index.html", "langchain/index.html")
+LANGFUSE = (SITE / "langfuse" / "index.html").read_text()
+GUIDES = (LITELLM, STRANDS, LANGCHAIN, LANGFUSE)
+PAGES = ("index.html", "404.html", "litellm/index.html", "strands/index.html", "langchain/index.html", "langfuse/index.html")
 
 
 def test_required_files_exist():
-    for name in ("index.html", "404.html", "litellm/index.html", "strands/index.html", "langchain/index.html", "style.css", "main.js", "favicon.svg", "_headers", "robots.txt"):
+    for name in ("index.html", "404.html", "litellm/index.html", "strands/index.html", "langchain/index.html", "langfuse/index.html", "style.css", "main.js", "favicon.svg", "_headers", "robots.txt"):
         assert (SITE / name).is_file(), name
 
 
@@ -95,7 +96,7 @@ def test_sitemap_and_robots():
     root = ET.parse(SITE / "sitemap.xml").getroot()
     locs = [e.text for e in root.iter("{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
     assert locs == ["https://cachecanary.com/", "https://cachecanary.com/litellm/", "https://cachecanary.com/strands/",
-                    "https://cachecanary.com/langchain/"]
+                    "https://cachecanary.com/langchain/", "https://cachecanary.com/langfuse/"]
     assert "Sitemap: https://cachecanary.com/sitemap.xml" in (SITE / "robots.txt").read_text()
 
 
@@ -123,11 +124,11 @@ def test_litellm_page_basics_and_links():
     assert 'rel="canonical" href="https://cachecanary.com/litellm/"' in LITELLM
     assert "—" not in LITELLM  # writing style: no em dashes
     guides = re.search(r'<h2 id="guides">.*?</ul>', INDEX, re.S).group(0)
-    assert all(f'href="/{g}/"' in guides for g in ("litellm", "strands", "langchain"))  # the home page's guides section
+    assert all(f'href="/{g}/"' in guides for g in ("litellm", "strands", "langchain", "langfuse"))  # the home page's guides section
     for page in (INDEX,) + GUIDES:  # every top menu has a Guides dropdown with each guide
         nav = re.search(r"<nav>(.*?)</nav>", page, re.S).group(1)
         menu = re.search(r'<details class="guides">.*?</details>', nav, re.S).group(0)
-        for link in ('href="/litellm/"', 'href="/strands/"', 'href="/langchain/"', 'href="/#guides"'):
+        for link in ('href="/litellm/"', 'href="/strands/"', 'href="/langchain/"', 'href="/langfuse/"', 'href="/#guides"'):
             assert link in menu
         assert '<script src="/main.js" defer></script>' in page  # closes the menu on outside click and Escape
         assert "soon" not in menu  # every guide listed is live
@@ -206,7 +207,8 @@ def test_live_script_uses_the_page_helper():
 def test_social_preview_images():
     """LinkedIn, X and Slack show a blank box without og:image; each page has its own 2400x1260 card (sharp on high-resolution screens)."""
     import struct
-    for html, name in ((INDEX, "og.png"), (LITELLM, "og-litellm.png"), (STRANDS, "og-strands.png"), (LANGCHAIN, "og-langchain.png")):
+    for html, name in ((INDEX, "og.png"), (LITELLM, "og-litellm.png"), (STRANDS, "og-strands.png"), (LANGCHAIN, "og-langchain.png"),
+                       (LANGFUSE, "og-langfuse.png")):
         # ?v=N busts LinkedIn's image cache; bump it whenever a card changes.
         assert re.search(rf'<meta property="og:image" content="https://cachecanary.com/{re.escape(name)}\?v=\d+">', html)
         assert 'content="summary_large_image"' in html
@@ -371,7 +373,7 @@ def test_search_result_structured_data():
     """Site name for Google results, and each guide marked up as an article with a breadcrumb."""
     website = [d for d in _json_ld(INDEX) if d["@type"] == "WebSite"]
     assert website and website[0]["name"] == "CacheCanary" and website[0]["url"] == "https://cachecanary.com/"
-    for html, path in ((LITELLM, "litellm"), (STRANDS, "strands"), (LANGCHAIN, "langchain")):
+    for html, path in ((LITELLM, "litellm"), (STRANDS, "strands"), (LANGCHAIN, "langchain"), (LANGFUSE, "langfuse")):
         data = {d["@type"]: d for d in _json_ld(html)}
         article, crumbs = data["TechArticle"], data["BreadcrumbList"]
         url = f"https://cachecanary.com/{path}/"
@@ -395,7 +397,7 @@ def test_author_links_everywhere():
     readme = (SITE.parent / "README.md").read_text()
     assert f"[Haris Farooq]({li})" in readme
     for link in ("https://cachecanary.com", "https://cachecanary.com/litellm/", "https://cachecanary.com/strands/",
-                 "https://cachecanary.com/langchain/"):
+                 "https://cachecanary.com/langchain/", "https://cachecanary.com/langfuse/"):
         assert f"]({link})" in readme
 
 
@@ -487,3 +489,55 @@ def test_contact_line_for_users_everywhere():
     readme = (SITE.parent / "README.md").read_text()
     assert line in readme
     assert "It runs inside your own AWS account" not in INDEX  # the dashboard isn't built yet
+
+
+def test_langfuse_page_basics_and_links():
+    assert '<html lang="en">' in LANGFUSE and 'name="viewport"' in LANGFUSE and "<title>" in LANGFUSE
+    assert 'rel="canonical" href="https://cachecanary.com/langfuse/"' in LANGFUSE
+    assert "—" not in LANGFUSE  # writing style: no em dashes
+    assert "https://cachecanary.com/langfuse/" in (SITE / "llms.txt").read_text()
+    body = LANGFUSE.split("<main>")[1]
+    assert all(f'href="/{g}/"' in body for g in ("litellm", "strands", "langchain"))
+    top = INDEX.split('<h2>What a broken cache costs</h2>')[0]
+    assert '<a href="/langfuse/">' in top  # reachable from the top of the home page
+    # The capture scripts the page links to are in the repo.
+    assert "https://github.com/Haarris/cachecanary/tree/main/scripts/langfuse_capture" in LANGFUSE
+    for name in ("README.md", "fake_bedrock.py", "send_strands.py", "send_litellm.py", "send_lc.py"):
+        assert (SITE.parent / "scripts" / "langfuse_capture" / name).is_file(), name
+
+
+def test_langfuse_page_output_matches_real_output(capsys, monkeypatch):
+    """The command on the Langfuse page prints exactly this for the real records in the repo."""
+    import html
+    from cachecanary import cli
+    monkeypatch.chdir(SITE.parent)
+    page = html.unescape(re.sub(r"<[^>]+>", "", LANGFUSE))
+    cmds = re.findall(r"\$ (cachecanary langfuse --file [^\n]+)", page)
+    assert len(cmds) == 1
+    assert cli.main(cmds[0].split()[1:]) == 1  # under the 80% target
+    for line in capsys.readouterr().out.strip().split("\n"):
+        assert line in page, line
+
+
+def test_langfuse_page_table_matches_the_real_records():
+    """Each 'just add it up' hit rate in the table is what the stored record gives, and CacheCanary gives 50%."""
+    import json
+    from cachecanary import langfuse
+    data = json.loads((SITE.parent / "tests" / "fixtures" / "langfuse_observations_2026-10.json").read_text())["data"]
+    pairs = {"chat|new": "Strands 1.61", "chat|old": "Strands 1.53 (and older)",
+             "litellm-legacy|default": "LiteLLM <code>langfuse</code> callback",
+             "litellm-otel|production": "LiteLLM <code>langfuse_otel</code>",
+             "ChatBedrockConverse|langchain": "LangChain (<code>ChatBedrockConverse</code>)"}
+    standard = {"read": ("input_cached_tokens", "input_cache_read", "cache_read_input_tokens"),
+                "write": ("input_cache_creation", "cache_creation_input_tokens")}
+    for key, label in pairs.items():
+        rows = [o for o in data if f"{o['name']}|{o['environment']}" == key]
+        assert len(rows) == 2, key
+        u = [o["usageDetails"] for o in rows]
+        read = sum(d.get(k, 0) for d in u for k in standard["read"])
+        write = sum(d.get(k, 0) for d in u for k in standard["write"])
+        naive = read / (sum(d["input"] for d in u) + read + write)
+        row = re.search(rf"<tr><td>{re.escape(label)}</td><td>[^<]*</td><td>(\d+)%", LANGFUSE)
+        assert row and int(row.group(1)) == round(naive * 100), (label, naive)
+        groups, _ = langfuse.aggregate(rows)
+        assert round(next(iter(groups.values())).usage.hit_ratio * 100) == 50, label

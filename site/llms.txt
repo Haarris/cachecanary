@@ -1,8 +1,8 @@
 # CacheCanary
 
-> CacheCanary is a free, open-source (Apache-2.0) Python CLI and GitHub Action that catches Claude prompt caching breaking silently on Amazon Bedrock. It shows the cache hit rate and what misses cost from Bedrock invocation logs, explains why one request missed the previous request's cache, and checks saved requests in CI. It runs locally and sends nothing anywhere.
+> CacheCanary is a free, open-source (Apache-2.0) Python CLI and GitHub Action that catches Claude prompt caching breaking silently on Amazon Bedrock. It shows the cache hit rate and what misses cost from Bedrock invocation logs or Langfuse traces, explains why one request missed the previous request's cache, and checks saved requests in CI. It runs locally and sends nothing anywhere.
 
-Install with `pip install cachecanary`. Commands: `lint` (check one saved Converse or InvokeModel request), `diff` (explain why the second of two requests missed the first one's cache), `probe` (send a request twice to Bedrock and confirm the second reads from cache), `logs` (hit rate, input cost and dollars lost to misses from Bedrock invocation logs or a folder of them).
+Install with `pip install cachecanary`. Commands: `lint` (check one saved Converse or InvokeModel request), `diff` (explain why the second of two requests missed the first one's cache), `probe` (send a request twice to Bedrock and confirm the second reads from cache), `logs` (hit rate, input cost and dollars lost to misses from Bedrock invocation logs or a folder of them), `langfuse` (the same from the generations a Langfuse project already records, read through the Langfuse API: token counts only, no prompts).
 
 What it checks, each verified against live Amazon Bedrock (Claude Sonnet 4.6, us-west-2, October 2026):
 
@@ -22,6 +22,7 @@ What it checks, each verified against live Amazon Bedrock (Claude Sonnet 4.6, us
 - [LiteLLM guide](https://cachecanary.com/litellm/): what LiteLLM 1.104.0 sends to Bedrock, where cache_control_injection_points lose the cache (role "user", parallel tool calls, dropped 1-hour lifetime), and a tested setup that keeps it
 - [Strands Agents guide](https://cachecanary.com/strands/): what Strands Agents 1.58.1 sends to Bedrock: caching off by default, more than 10 parallel tool calls losing the conversation, the default 40-message window losing the cache every turn, inference profile ARNs needing strategy "anthropic", and lifetime settings Bedrock rejects, with a tested hook and conversation manager
 - [LangChain guide](https://cachecanary.com/langchain/): what langchain-aws 1.8.1 and LangChain 1.4.3 send to Bedrock from create_agent: caching off until you add BedrockPromptCachingMiddleware, ChatBedrock losing the whole cache after 10 parallel tool calls (ChatBedrockConverse holds 21), ClearToolUsesEdit context editing rewriting the conversation on every call, and your own cache point turning off LangChain's extra one, with a tested fix for each
+- [Langfuse guide](https://cachecanary.com/langfuse/): reading the real Bedrock cache hit rate from Langfuse traces, tested with Strands 1.61.1 and 1.53.0, LiteLLM 1.106.0 (langfuse callback and langfuse_otel) and langchain-aws 1.9.0 against Langfuse 4.64: Strands before 1.54 makes the cache look perfect (input 0 on cache reads, writes under cache_write_input_tokens which Langfuse does not recognise) and LiteLLM's langfuse callback counts cache writes twice; CacheCanary rebuilds the uncached input from the total and counts only generations
 - [PyPI](https://pypi.org/project/cachecanary/): package and release history
 - [GitHub Action on the Marketplace](https://github.com/marketplace/actions/cachecanary): `uses: Haarris/cachecanary@v0`
 

@@ -13,7 +13,7 @@ I built CacheCanary after running into these failures while running Claude agent
 
 I wrote up the five ways I've seen caching break on Bedrock, with the bug reports behind each one and the lookback limit I measured: [Five ways Claude prompt caching quietly breaks on Amazon Bedrock](https://harisfarooq.substack.com/p/five-ways-claude-prompt-caching-quietly).
 
-Website: [cachecanary.com](https://cachecanary.com). It has guides that show exactly what a framework sends to Bedrock, where the cache is lost, and a tested setup that keeps it: [LiteLLM](https://cachecanary.com/litellm/), [Strands Agents](https://cachecanary.com/strands/) and [LangChain](https://cachecanary.com/langchain/).
+Website: [cachecanary.com](https://cachecanary.com). It has guides that show exactly what a framework sends to Bedrock, where the cache is lost, and a tested setup that keeps it: [LiteLLM](https://cachecanary.com/litellm/), [Strands Agents](https://cachecanary.com/strands/) and [LangChain](https://cachecanary.com/langchain/). If you use Langfuse, the [Langfuse guide](https://cachecanary.com/langfuse/) shows how to read your real hit rate from your traces.
 
 What that costs: the cached part of each request becomes about 10x more expensive, because cache reads are billed at a tenth of the input price. For one agent with a 10,000-token prompt and 100,000 requests a month, that's roughly $2,700 a month extra at Anthropic's list price for Claude Sonnet 4.6 ($3 per million input tokens; Bedrock prices vary by region).
 
@@ -137,7 +137,7 @@ It reads S3 deliveries, CloudWatch exports and `aws logs filter-log-events` outp
 
 ## Hit rates from Langfuse
 
-If you trace your agents with [Langfuse](https://langfuse.com), you don't need invocation logging. Langfuse already stores the cache counts for every model call, and `langfuse` reads them through the Langfuse API:
+If you trace your agents with [Langfuse](https://langfuse.com), you don't need invocation logging (more detail in the [Langfuse guide](https://cachecanary.com/langfuse/)). Langfuse already stores the cache counts for every model call, and `langfuse` reads them through the Langfuse API:
 
 ```bash
 export LANGFUSE_PUBLIC_KEY=pk-lf-...  LANGFUSE_SECRET_KEY=sk-lf-...
