@@ -10,7 +10,8 @@ STRANDS = (SITE / "strands" / "index.html").read_text()
 LANGCHAIN = (SITE / "langchain" / "index.html").read_text()
 LANGFUSE = (SITE / "langfuse" / "index.html").read_text()
 GUIDES = (LITELLM, STRANDS, LANGCHAIN, LANGFUSE)
-PAGES = ("index.html", "404.html", "litellm/index.html", "strands/index.html", "langchain/index.html", "langfuse/index.html")
+PAGES = ("index.html", "404.html", "litellm/index.html", "strands/index.html", "langchain/index.html", "langfuse/index.html",
+         "check/index.html")
 
 
 def test_required_files_exist():
@@ -96,7 +97,8 @@ def test_sitemap_and_robots():
     root = ET.parse(SITE / "sitemap.xml").getroot()
     locs = [e.text for e in root.iter("{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
     assert locs == ["https://cachecanary.com/", "https://cachecanary.com/litellm/", "https://cachecanary.com/strands/",
-                    "https://cachecanary.com/langchain/", "https://cachecanary.com/langfuse/"]
+                    "https://cachecanary.com/langchain/", "https://cachecanary.com/langfuse/",
+                    "https://cachecanary.com/check/"]
     assert "Sitemap: https://cachecanary.com/sitemap.xml" in (SITE / "robots.txt").read_text()
 
 
@@ -208,7 +210,7 @@ def test_social_preview_images():
     """LinkedIn, X and Slack show a blank box without og:image; each page has its own 2400x1260 card (sharp on high-resolution screens)."""
     import struct
     for html, name in ((INDEX, "og.png"), (LITELLM, "og-litellm.png"), (STRANDS, "og-strands.png"), (LANGCHAIN, "og-langchain.png"),
-                       (LANGFUSE, "og-langfuse.png")):
+                       (LANGFUSE, "og-langfuse.png"), ((SITE / "check" / "index.html").read_text(), "og-check.png")):
         # ?v=N busts LinkedIn's image cache; bump it whenever a card changes.
         assert re.search(rf'<meta property="og:image" content="https://cachecanary.com/{re.escape(name)}\?v=\d+">', html)
         assert 'content="summary_large_image"' in html

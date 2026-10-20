@@ -98,6 +98,7 @@
 <div class="install"><span id="install-cmd">pip install cachecanary</span><button type="button" id="copy" aria-label="Copy install command">Copy</button></div>
 <div class="actions">
   <a class="btn primary" href="https://github.com/Haarris/cachecanary">Get it on GitHub</a>
+  <a class="btn" href="/check/">Check your cache in 30 seconds</a>
   <a class="btn" href="https://github.com/Haarris/cachecanary#readme">Read the docs</a>
 </div>
 <p class="note under-actions">Free and open source (Apache 2.0). The tool runs on your machine and sends nothing anywhere.</p>
@@ -117,6 +118,7 @@
 <ul>
   <li><b>Install it</b> with <code>pip install cachecanary</code>. It runs on your laptop or in GitHub Actions. No account, no signup, no server.</li>
   <li><b>Check a request:</b> save it as a JSON file and run one command. No AWS access needed.</li>
+  <li><b>Just want a quick number?</b> Paste three totals from CloudWatch into the <a href="/check/">cache checker</a>. It runs in your browser, nothing to install.</li>
   <li><b>See your real hit rate and what misses cost:</b> copy your Bedrock log files from S3 with one AWS command, then point CacheCanary at the folder. If you use Langfuse, it can read the same numbers from your traces instead.</li>
   <li><b>Safe to try:</b> <code>lint</code>, <code>diff</code> and <code>logs</code> only read files, and <code>langfuse</code> only reads from your own Langfuse project. Only <code>probe</code> calls Bedrock, and only with your own AWS credentials.</li>
 </ul>

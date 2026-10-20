@@ -120,3 +120,32 @@
     .brand svg { width: 24px; height: 24px; }
     nav > a, nav summary { margin-left: 12px; font-size: 14px; }
   }
+
+  /* Cache checker */
+  .checker { border: 1px solid var(--line); border-radius: 12px; padding: 18px 18px 6px; margin: 22px 0 18px; }
+  .checker .row { display: grid; gap: 14px; margin-bottom: 12px; }
+  .checker .row.two { grid-template-columns: 1fr 1fr; }
+  .checker .row.three { grid-template-columns: 1fr 1fr 1fr; }
+  .checker label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; min-width: 0; }
+  .checker label code { font-weight: 500; font-size: 13px; overflow-wrap: anywhere; }
+  .checker input, .checker select {
+    font: inherit; font-weight: 400; font-size: 16px; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; width: 100%; min-width: 0;
+  }
+  .checker input:focus, .checker select:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  .checker .hint { display: block; color: var(--muted); font-size: 13px; font-weight: 400; margin: 0 0 12px; }
+  .checker label .hint { margin: 0; }
+  .checker details.more { margin: 2px 0 12px; }
+  .checker details.more summary { cursor: pointer; color: var(--link); font-size: 14px; margin-bottom: 10px; }
+  .form-error { color: var(--err); font-size: 15px; }
+  .result { border-left: 4px solid var(--line); padding-left: 16px; margin: 8px 0 18px; }
+  .result.healthy { border-left-color: #3fa66b; }
+  .result.leaking { border-left-color: var(--warn); }
+  .result.poor, .result.never-read, .result.none { border-left-color: var(--err); }
+  .result .verdict { font-size: 20px; font-weight: 650; margin: 0 0 6px; }
+  .result .facts { margin-top: 10px; }
+  ol { padding-left: 22px; margin: 0 0 14px; }
+  ol li { margin-bottom: 8px; }
+  @media (max-width: 640px) {
+    .checker .row.two, .checker .row.three { grid-template-columns: 1fr; }
+  }

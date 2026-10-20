@@ -19,6 +19,8 @@ What that costs: the cached part of each request becomes about 10x more expensiv
 
 CacheCanary is a small CLI and GitHub Action for this. It checks your requests in CI, tells you why a request missed the cache, and reads your Bedrock logs or your Langfuse traces to show hit rates in production.
 
+Want a quick number first? Paste three totals from CloudWatch into the [cache checker](https://cachecanary.com/check/). It runs in your browser, nothing to install.
+
 ## Install
 
 ```bash

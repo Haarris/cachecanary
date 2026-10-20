@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bedrock prompt cache checker: your hit rate and what misses cost</title>
+<meta name="description" content="Paste three numbers from CloudWatch and see your Claude prompt cache hit rate on Amazon Bedrock, what your input cost, and how much cache misses cost you. Runs in your browser, nothing is sent anywhere.">
+<meta property="og:title" content="Check your Bedrock prompt cache in 30 seconds">
+<meta property="og:description" content="Three numbers from CloudWatch: your Claude cache hit rate on Bedrock and what the misses cost. Runs in your browser.">
+<meta property="og:url" content="https://cachecanary.com/check/">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://cachecanary.com/og-check.png?v=1">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:image:alt" content="Check your Bedrock prompt cache, by CacheCanary.">
+<meta property="og:site_name" content="CacheCanary">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://cachecanary.com/check/">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/style.css">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "WebApplication",
+ "name": "Bedrock prompt cache checker",
+ "url": "https://cachecanary.com/check/",
+ "description": "Paste three numbers from CloudWatch and see your Claude prompt cache hit rate on Amazon Bedrock, what your input cost, and how much cache misses cost you. Runs in your browser, nothing is sent anywhere.",
+ "applicationCategory": "DeveloperApplication",
+ "operatingSystem": "Any",
+ "browserRequirements": "Requires JavaScript",
+ "offers": {
+  "@type": "Offer",
+  "price": "0",
+  "priceCurrency": "USD"
+ },
+ "author": {
+  "@type": "Person",
+  "name": "Haris Farooq",
+  "url": "https://www.linkedin.com/in/haris-farooq",
+  "sameAs": [
+   "https://www.linkedin.com/in/haris-farooq",
+   "https://github.com/Haarris",
+   "https://harisfarooq.substack.com"
+  ]
+ }
+}
+</script>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "BreadcrumbList",
+ "itemListElement": [
+  {
+   "@type": "ListItem",
+   "position": 1,
+   "name": "CacheCanary",
+   "item": "https://cachecanary.com/"
+  },
+  {
+   "@type": "ListItem",
+   "position": 2,
+   "name": "Cache checker",
+   "item": "https://cachecanary.com/check/"
+  }
+ ]
+}
+</script>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a class="brand" href="/" aria-label="CacheCanary home">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 29.2h26" stroke="#8a5a2b" stroke-width="1.8" stroke-linecap="round"/><path d="M14.6 24.4l-.8 4.6M18.2 24l.4 5" stroke="#e8892b" stroke-width="1.4" stroke-linecap="round"/><path d="M10.5 19.5L2.2 25.4l4.4.4L12.8 22z" fill="#d9a514"/><ellipse cx="15.5" cy="18.6" rx="8.4" ry="6.2" transform="rotate(-24 15.5 18.6)" fill="#f2c230"/><circle cx="21.8" cy="11.2" r="4.7" fill="#f2c230"/><path d="M26 10l4.4 1.6-4.4 1.8z" fill="#e8892b"/><circle cx="23.2" cy="10.4" r="1.1" fill="#1d1d1b"/><path d="M9.6 19.6c2.2-4.4 6.8-5.6 9.6-4.2-1.2 3.8-5.4 6.4-9.6 4.2z" fill="#d9a514"/></svg>
+    CacheCanary
+  </a>
+  <nav>
+    <a href="/">Home</a>
+    <details class="guides">
+      <summary>Guides</summary>
+      <div class="menu">
+        <a href="/litellm/">LiteLLM</a>
+        <a href="/strands/">Strands Agents</a>
+        <a href="/langchain/">LangChain</a>
+        <a href="/langfuse/">Langfuse</a>
+        <a href="/#guides">All guides</a>
+      </div>
+    </details>
+    <a href="https://github.com/Haarris/cachecanary">GitHub</a>
+  </nav>
+</header>
+
+<main>
+<h1>Check your Bedrock prompt cache</h1>
+
+<p class="lead">Paste three numbers from CloudWatch and see how much of your Claude prompt came from the cache on Amazon Bedrock, what your input cost, and how much the misses cost you. Nothing to install. It runs in your browser and sends nothing anywhere.</p>
+
+<form id="checker" class="checker" autocomplete="off" novalidate>
+  <div class="row two">
+    <label>Model
+      <select id="model"></select>
+    </label>
+    <label>Model ID starts with
+      <select id="endpoint">
+        <option value="global">global. (global endpoint)</option>
+        <option value="regional" selected>us., eu., apac. or nothing (regional)</option>
+      </select>
+    </label>
+  </div>
+  <p class="hint">Use the numbers for one model, summed over the same period (a week is a good start). The next section shows where to find them.</p>
+  <div class="row three">
+    <label><code>InputTokenCount</code>
+      <input id="uncached" inputmode="numeric" placeholder="e.g. 1,250,000">
+      <span class="hint">Input that didn't come from the cache</span>
+    </label>
+    <label><code>CacheReadInputTokenCount</code>
+      <input id="read" inputmode="numeric" placeholder="e.g. 8,400,000">
+      <span class="hint">Read from the cache</span>
+    </label>
+    <label><code>CacheWriteInputTokenCount</code>
+      <input id="write" inputmode="numeric" placeholder="e.g. 2,100,000">
+      <span class="hint">Written to the cache</span>
+    </label>
+  </div>
+  <details class="more">
+    <summary>Target hit rate and your own price</summary>
+    <div class="row two">
+      <label>Target hit rate (%)
+        <input id="target" inputmode="decimal" value="90">
+      </label>
+      <label>Your input price, USD per million tokens (optional)
+        <input id="price" inputmode="decimal" placeholder="Bedrock list price">
+      </label>
+    </div>
+  </details>
+</form>
+
+<p id="error" class="form-error" role="alert" hidden></p>
+
+<section id="result" class="result" aria-live="polite" hidden>
+  <p id="r-verdict" class="verdict"></p>
+  <div class="facts">
+    <div class="fact"><b id="r-hit"></b><span id="r-hit-note"></span></div>
+    <div class="fact"><b id="r-cost"></b><span id="r-cost-note"></span></div>
+    <div class="fact"><b id="r-lost"></b><span id="r-lost-note"></span></div>
+  </div>
+  <h3 id="r-causes-title">What usually causes this</h3>
+  <ul id="r-causes"></ul>
+  <p class="note">To find out which one it is, check a saved request with <code>cachecanary lint</code>, or compare two requests in a row with <code>cachecanary diff</code>. Setup is on the <a href="/">home page</a>, and the <a href="/#guides">framework guides</a> show where LiteLLM, Strands Agents and LangChain lose the cache.</p>
+</section>
+
+<h2>Where to find the three numbers</h2>
+<p>Amazon Bedrock publishes them to CloudWatch for every model you call, with no setup. In the CloudWatch console:</p>
+<ol>
+  <li>Open <b>Metrics</b>, then <b>All metrics</b>, and type your model ID in the search box (or open <b>Bedrock</b> and the metrics listed by model ID).</li>
+  <li>For the model you want to check, tick <code>InputTokenCount</code>, <code>CacheReadInputTokenCount</code> and <code>CacheWriteInputTokenCount</code>.</li>
+  <li>Pick a time range, for example 1 week. On the <b>Graphed metrics</b> tab, set <b>Statistic</b> to <b>Sum</b> and <b>Period</b> to the same length as the time range, so each metric shows one total.</li>
+</ol>
+<p>With the AWS CLI, list the exact model IDs CloudWatch has, then get each total. This is the cache read total for one week; run it again with the other two metric names, and add up the values if it returns more than one:</p>
+<pre class="yaml">aws cloudwatch list-metrics --namespace AWS/Bedrock \
+  --metric-name CacheReadInputTokenCount
+
+aws cloudwatch get-metric-statistics --namespace AWS/Bedrock \
+  --metric-name CacheReadInputTokenCount \
+  --dimensions Name=ModelId,Value=YOUR_MODEL_ID \
+  --start-time 2026-10-13T00:00:00Z --end-time 2026-10-20T00:00:00Z \
+  --period 604800 --statistics Sum</pre>
+<p class="note">Use the Region your app calls. <code>InputTokenCount</code> doesn't include cached tokens (<a href="https://docs.aws.amazon.com/bedrock/latest/userguide/quotas-token-burndown.html">AWS docs</a>), so the three numbers add up to your whole input.</p>
+
+<h2>How the numbers work</h2>
+<ul>
+  <li><b>Hit rate</b> is the share of all your input tokens that were read from the cache: cache reads divided by the three numbers added together.</li>
+  <li><b>Input cost</b> is uncached tokens at the input price, cache reads at the read price (a tenth of it for most models, less on the newest ones), and cache writes at 1.25 times the input price. CloudWatch doesn't say which writes used the 1-hour cache, which costs 2 times, so all writes are priced as 5-minute writes.</li>
+  <li><b>Lost to cache misses</b> compares that with the same tokens at your target hit rate: the part that would have been cache reads was paid at the full or write price instead.</li>
+  <li><b>Prices</b> are Bedrock's on-demand list prices (October 2026). <code>global.</code> model IDs are billed at list price and regional ones cost 10% more, except older models, which cost the same on both. If you have a discount, enter your own input price.</li>
+  <li>The maths is the same as the <code>cachecanary logs</code> and <code>cachecanary langfuse</code> commands, so the numbers match.</li>
+</ul>
+<p>Want the same for each app or IAM role, a reason for each miss, or an alert when it drops? <a href="/">CacheCanary</a> reads your <a href="https://github.com/Haarris/cachecanary#production-hit-rates-and-cost">invocation logs</a> or your <a href="/langfuse/">Langfuse traces</a>, and runs in CI.</p>
+<p>Using CacheCanary? I'd love to hear how it's going, good or bad, and whether you'd want the dashboard. Email me at <a href="mailto:hello@cachecanary.com">hello@cachecanary.com</a>. I read every message.</p>
+</main>
+
+<footer>
+  CacheCanary is free and open source under the Apache 2.0 license. Made by <a href="https://www.linkedin.com/in/haris-farooq">Haris Farooq</a>, an engineer who runs Claude agents on Bedrock in production.<br>
+  <a href="https://github.com/Haarris/cachecanary">GitHub</a> · <a href="https://www.linkedin.com/in/haris-farooq">LinkedIn</a> · <a href="mailto:hello@cachecanary.com">hello@cachecanary.com</a>
+</footer>
+
+</div>
+<script src="/main.js" defer></script>
+<script src="/check.js" defer></script>
+</body>
+</html>
