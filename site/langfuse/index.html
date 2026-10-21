@@ -95,6 +95,7 @@
         <a href="/#guides">All guides</a>
       </div>
     </details>
+    <a href="/check/">Checker</a>
     <a href="https://github.com/Haarris/cachecanary">GitHub</a>
   </nav>
 </header>
@@ -172,6 +173,7 @@ Read 10 generations.
 <h2>How I tested this</h2>
 <p>I ran a real Langfuse 4.64 server with its official Docker setup. Strands 1.61.1 and 1.53.0, LiteLLM 1.106.0 (its <code>langfuse</code> callback and <code>langfuse_otel</code>) and langchain-aws 1.9.0 with Langfuse's LangChain handler each made two calls to a small local server standing in for Bedrock. That server returned the token counts from a <a href="https://github.com/strands-agents/sdk-python/issues/3546">real Bedrock capture</a>: 10 new input tokens, 4 output and 5,848 cached, 5,862 in total. Each library sent its traces to Langfuse the normal way, and I read them back through the Langfuse API. The records are in the repo, and the tests check that CacheCanary gives 50% for each setup. I also ran it on a production Langfuse Cloud project, and its numbers matched a separate count of the raw data for every model. The scripts are in the repo: <a href="https://github.com/Haarris/cachecanary/tree/main/scripts/langfuse_capture">langfuse_capture</a>.</p>
 <p>Framework guides: <a href="/litellm/">LiteLLM</a>, <a href="/strands/">Strands Agents</a> and <a href="/langchain/">LangChain</a>. More on why caching breaks on Bedrock: <a href="https://harisfarooq.substack.com/p/five-ways-claude-prompt-caching-quietly">Five ways Claude prompt caching quietly breaks on Amazon Bedrock</a>.</p>
+<p>Want a quick number for your own app? Paste three totals from CloudWatch into the <a href="/check/">cache checker</a>. It runs in your browser, nothing to install.</p>
 <p>Using CacheCanary? I'd love to hear how it's going, good or bad, and whether you'd want the dashboard. Email me at <a href="mailto:hello@cachecanary.com">hello@cachecanary.com</a>. I read every message.</p>
 </main>
 

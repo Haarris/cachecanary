@@ -543,3 +543,16 @@ def test_langfuse_page_table_matches_the_real_records():
         assert row and int(row.group(1)) == round(naive * 100), (label, naive)
         groups, _ = langfuse.aggregate(rows)
         assert round(next(iter(groups.values())).usage.hit_ratio * 100) == 50, label
+
+
+def test_checker_is_in_every_top_menu_and_every_guide():
+    """The cache checker is one click away from every page, and each guide mentions it."""
+    check = (SITE / "check" / "index.html").read_text()
+    for html in (INDEX,) + GUIDES + (check,):
+        nav = re.search(r"<nav>(.*?)</nav>", html, re.S).group(1)
+        outside_menu = re.sub(r'<details class="guides">.*?</details>', "", nav, flags=re.S)
+        assert re.search(r'<a href="/check/"( aria-current="page")?>Checker</a>', outside_menu)
+    assert '<a href="/check/" aria-current="page">Checker</a>' in check  # marked as the current page
+    for html in GUIDES:
+        main = html.split("<main>")[1].split("</main>")[0]
+        assert 'into the <a href="/check/">cache checker</a>' in main
