@@ -52,7 +52,8 @@ def main() -> int:
     def save(name, body):
         (out / name).write_text(json.dumps(body, indent=2) + "\n")
 
-    # Finding 2: ChatBedrock (InvokeModel) with the caching middleware, 11 parallel tool calls.
+    # Finding 2: ChatBedrock (InvokeModel) with the caching middleware, 11 parallel tool calls. On Oct 7 2026 this lost the cache; Bedrock now
+    # counts a group of tool calls as one lookback position, so cachecanary diff reports it as kept.
     chat_bedrock = ChatBedrock(model=MODEL, region_name="us-west-2", endpoint_url=fake.url, model_kwargs={"max_tokens": 50})
     bodies = run(["tools:11", "text"], chat_bedrock, ["Check my orders."], [BedrockPromptCachingMiddleware()])
     save("invoke-turn1.json", bodies[0])

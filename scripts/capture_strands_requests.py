@@ -49,7 +49,8 @@ def main() -> int:
         (out / name).write_text(json.dumps(body, indent=2) + "\n")
 
     auto = CacheConfig(strategy="auto")
-    # Finding 2: one agent step with 11 parallel tool calls.
+    # Finding 2: one agent step with 11 parallel tool calls. On Oct 7 2026 this lost the cache; Bedrock now
+    # counts a group of tool calls as one lookback position, so cachecanary diff reports it as kept.
     bodies = run(["tools:11", "text"], ["Check my orders."], auto)
     save("agent-turn1.json", bodies[0])
     save("agent-turn2.json", bodies[1])

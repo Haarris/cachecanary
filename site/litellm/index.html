@@ -6,7 +6,7 @@
 <title>LiteLLM prompt caching on Amazon Bedrock: what actually gets cached</title>
 <meta name="description" content="I captured the exact Bedrock requests LiteLLM 1.104.0 sends and tested them on live Bedrock. Where cache_control_injection_points lose the cache, and a setup that keeps it.">
 <meta property="og:title" content="LiteLLM prompt caching on Amazon Bedrock">
-<meta property="og:description" content="What LiteLLM actually sends to Bedrock, four ways it quietly costs you, and a setup that keeps the cache. Tested on live Bedrock.">
+<meta property="og:description" content="What LiteLLM actually sends to Bedrock, the ways it quietly costs you, and a setup that keeps the cache. Tested on live Bedrock.">
 <meta property="og:url" content="https://cachecanary.com/litellm/">
 <meta property="og:type" content="article">
 <meta property="og:image" content="https://cachecanary.com/og-litellm.png?v=2">
@@ -30,7 +30,7 @@
  "description": "I captured the exact Bedrock requests LiteLLM 1.104.0 sends and tested them on live Bedrock. Where cache_control_injection_points lose the cache, and a setup that keeps it.",
  "image": "https://cachecanary.com/og-litellm.png?v=2",
  "datePublished": "2026-10-07",
- "dateModified": "2026-10-07",
+ "dateModified": "2026-10-30",
  "author": {
   "@type": "Person",
   "name": "Haris Farooq",
@@ -103,56 +103,46 @@
 <main>
 <h1>Prompt caching with LiteLLM on Amazon Bedrock</h1>
 
-<p class="lead">LiteLLM can add Bedrock cache points for you. I wanted to know what it really sends, so I captured the exact requests LiteLLM 1.104.0 builds for Bedrock, checked them with CacheCanary, and ran the important cases on live Bedrock (Claude Sonnet 4.6, us-west-2, October 2026).</p>
+<p class="lead">LiteLLM can add Bedrock cache points for you. I wanted to know what it really sends, so I captured the exact requests LiteLLM 1.104.0 builds for Bedrock, checked them with CacheCanary, and ran the important cases on live Bedrock (Claude Sonnet 4.6, us-west-2, October 2026, re-checked October 30).</p>
 
 <p>The short version: LiteLLM puts cache points in valid places. The money is lost in where you ask it to put them, and in a few settings it drops without telling you.</p>
 
 <h2>The setup I'd use</h2>
-<p>Bedrock lets you use 4 cache points per request. This helper spends them on the four places that matter: the system prompt, your newest user message, the start of the newest round of tool results, and the end of the conversation.</p>
-<pre class="yaml">def cache_points(messages):
-    """Bedrock cache points for this call (Bedrock allows 4)."""
-    # The system prompt and the end of the conversation.
-    points = [{"location": "message", "role": "system"},
-              {"location": "message", "index": -1}]
-    users = [i for i, m in enumerate(messages) if m["role"] == "user"]
-    rounds = [i for i, m in enumerate(messages)
-              if m["role"] == "assistant" and m.get("tool_calls")]
-    # The newest user message.
-    if users:
-        points.append({"location": "message", "index": users[-1]})
-    # The first tool result of the newest round of tool calls.
-    if rounds and (not users or rounds[-1] &gt; users[-1]) \
-            and rounds[-1] + 1 &lt; len(messages):
-        points.append({"location": "message", "index": rounds[-1] + 1})
-    return points
-
-
-response = litellm.completion(
+<p>Two cache points are enough: one on the system prompt and one on the last message, so the conversation point moves forward on every call.</p>
+<pre class="yaml">response = litellm.completion(
     model="bedrock/converse/us.anthropic.claude-sonnet-4-6",
     messages=messages,
     tools=tools,
-    cache_control_injection_points=cache_points(messages),
+    cache_control_injection_points=[
+        {"location": "message", "role": "system"},
+        {"location": "message", "index": -1},
+    ],
 )</pre>
-<p>Work out the points again on every call, because the indexes move as the conversation grows. I ran a 7-step agent session with it on live Bedrock: each step read almost the whole previous prompt from the cache.</p>
+<p>I ran a 7-step agent session with it on live Bedrock, with rounds of 12, 20 and 40 parallel tool calls: each step read almost the whole previous prompt from the cache.</p>
 <div class="scroll">
 <table>
   <thead><tr><th>Step</th><th>Read from cache</th><th>Size of the previous request</th></tr></thead>
   <tbody>
-    <tr><td>12 parallel tool calls</td><td>6,926</td><td>6,929</td></tr>
-    <tr><td>1 tool call</td><td>8,867</td><td>8,868</td></tr>
-    <tr><td>20 parallel tool calls</td><td>9,030</td><td>9,031</td></tr>
-    <tr><td>A follow-up question from the user</td><td>12,240</td><td>12,241</td></tr>
-    <tr><td>3 parallel tool calls</td><td>12,256</td><td>12,259</td></tr>
+    <tr><td>12 parallel tool calls</td><td>6,920</td><td>6,923</td></tr>
+    <tr><td>1 tool call</td><td>8,861</td><td>8,862</td></tr>
+    <tr><td>20 parallel tool calls</td><td>9,024</td><td>9,025</td></tr>
+    <tr><td>A follow-up question from the user</td><td>12,234</td><td>12,235</td></tr>
+    <tr><td>3 parallel tool calls</td><td>12,250</td><td>12,253</td></tr>
+    <tr><td>40 parallel tool calls</td><td>12,760</td><td>12,761</td></tr>
   </tbody>
 </table>
 </div>
 <p class="note">Tokens. The last few tokens of each request are always new, so the cache can't hold them.</p>
+<p>On October 7 2026 wide tool rounds needed two more points, and this page had a helper for them. Bedrock no longer needs it (finding 2).</p>
 <p>If you use the LiteLLM Proxy, the same points go in the request body. With the OpenAI client:</p>
 <pre class="yaml">response = client.chat.completions.create(
     model="claude-sonnet",
     messages=messages,
     tools=tools,
-    extra_body={"cache_control_injection_points": cache_points(messages)},
+    extra_body={"cache_control_injection_points": [
+        {"location": "message", "role": "system"},
+        {"location": "message", "index": -1},
+    ]},
 )</pre>
 
 <h2>What I found</h2>
@@ -171,21 +161,21 @@ response = litellm.completion(
 </div>
 <p>Use <code>index: -1</code> (the last message) instead of <code>role: "user"</code>.</p>
 
-<h3>2. Many parallel tool calls lose the conversation</h3>
-<p>With points on the system prompt and the last message, the conversation point moves to the newest tool result on each step. That works until one step adds a lot of blocks. Bedrock only looks back 21 blocks from a cache point for the previous cache entry, and every tool call and every tool result is a block. 12 parallel calls add 24 blocks, so the previous entry is out of reach and the conversation is written to the cache again. On live Bedrock, with a long customer history in the first user message:</p>
+<h3>2. Many parallel tool calls: fine since October 2026</h3>
+<p>With points on the system prompt and the last message, the conversation point moves to the newest tool result on each step. Bedrock only looks back about 20 positions from a cache point for the previous cache entry. When I first tested this on October 7 2026, it counted every tool call and every tool result as its own position, so 12 parallel calls put the previous entry out of reach and the conversation was written to the cache again, at 1.25 times the normal input price instead of a tenth of it. By October 28 Bedrock counted a group of tool calls side by side as one position, and the same for their results, as <a href="https://platform.claude.com/docs/en/build-with-claude/prompt-caching">Anthropic documents for its own API</a>. The same requests on live Bedrock, with a long customer history in the first user message:</p>
 <div class="scroll">
 <table>
-  <thead><tr><th>Next step</th><th>Read from cache</th><th>Written again</th></tr></thead>
+  <thead><tr><th>Next step</th><th>Read from cache</th><th>Written</th></tr></thead>
   <tbody>
-    <tr><td>4 parallel tool calls</td><td>6,920</td><td>669</td></tr>
-    <tr><td>12 parallel tool calls</td><td>2,214 (system prompt only)</td><td>6,647</td></tr>
+    <tr><td>4 parallel tool calls</td><td>6,918</td><td>669</td></tr>
+    <tr><td>12 parallel tool calls</td><td>6,918 (on October 7: 2,214, the system prompt only)</td><td>1,941</td></tr>
   </tbody>
 </table>
 </div>
-<p>The part that was written again costs 1.25 times the normal input price instead of a tenth of it, so 12.5 times more than a cache read. In a long agent session that happens on every wide step. The helper above fixes it with the point on the first result of the newest round: that point is close enough to find the previous entry. It holds for up to 20 parallel calls in one round. At 21, the round before it is written again, but the point on the newest user message still holds everything up to there (in my run: 12,256 of the previous 12,767 tokens read from the cache).</p>
+<p>A step can still lose the cache if it adds more than about 20 other blocks at once, like 22 or more separate text blocks; <code>cachecanary diff</code> counts positions the way Bedrock does now.</p>
 
 <h3>3. A cache point on an assistant tool-call message is dropped</h3>
-<p>The obvious place for an extra point is the assistant message that holds the tool calls. When that message has only tool calls and no text, LiteLLM has nothing to attach the point to and sends the request without it. No warning. That's why the helper uses the first tool result instead, which LiteLLM turns into a valid Bedrock cache point.</p>
+<p>If you add a point on the assistant message that holds the tool calls, and that message has only tool calls and no text, LiteLLM has nothing to attach the point to and sends the request without it. No warning. A point on a tool result does work: LiteLLM turns it into a valid Bedrock cache point after the result.</p>
 
 <h3>4. The 1-hour cache lifetime can be dropped without a warning</h3>
 <p>You can ask for a 1-hour cache with <code>"ttl": "1h"</code> in <code>cache_control</code>, or in an injection point's <code>control</code>. LiteLLM only sends it for models whose entry in its price list says they support it. Otherwise it sends a normal 5-minute cache point. I found two cases where that happens to a model that does support 1 hour:</p>
@@ -232,20 +222,17 @@ class SaveBedrockRequests(CustomLogger):
 
 litellm.callbacks = [SaveBedrockRequests()]</pre>
 <p>Run one conversation, then compare two requests in a row with <code>cachecanary diff</code>. These are real outputs on requests LiteLLM built:</p>
-<div class="term"><pre><span class="p">$</span> cachecanary diff agent-turn1.json agent-turn2.json --model us.anthropic.claude-sonnet-4-6
-lookback-exceeded: 24 blocks were added between the previous checkpoint and the next one. Bedrock only finds an earlier cache entry up to 21 blocks back (21 added still hits, 22 misses), so this call writes the cache again. Add a checkpoint in between (common after many parallel tool calls). (messages[2].content[11])
-
-<span class="p">$</span> cachecanary diff chat-turn6.json chat-turn7.json --model us.anthropic.claude-sonnet-4-6
+<div class="term"><pre><span class="p">$</span> cachecanary diff chat-turn6.json chat-turn7.json --model us.anthropic.claude-sonnet-4-6
 prefix-identical: The cached prefix is identical. If B still missed, the entry likely expired (TTL elapsed between calls) or cross-region inference routed to a Region without the entry.
 checkpoint-not-moved: The cached part was read, but the last cache point didn't move while 8 new blocks were added after it. Those are paid at full price on every call. Put the cache point at the end of the newest message. (messages[4].content[0])
 
 <span class="p">$</span> cachecanary diff with-download.json without-download.json --model us.anthropic.claude-sonnet-5-5
 ttl-changed: Checkpoint TTL changed (1h -&gt; 5m); entries are keyed by TTL.</pre></div>
-<p class="note">In plain words: the first pair is the 12-tool-call step from finding 2. The second is the <code>role: "user"</code> chat from finding 1: the cache works, but the newest messages are never added to it. The third is the same Sonnet 5.5 request with and without LiteLLM's price list download (finding 4).</p>
+<p class="note">In plain words: the first pair is the <code>role: "user"</code> chat from finding 1: the cache works, but the newest messages are never added to it. The second is the same Sonnet 5.5 request with and without LiteLLM's price list download (finding 4).</p>
 <p>Keep a few saved requests in your repo and run <code>cachecanary lint</code> on them in CI, and a LiteLLM upgrade that changes your cache points shows up in a pull request instead of on the bill. Setup is on the <a href="/">home page</a>.</p>
 
 <h2>How I tested this</h2>
-<p>LiteLLM 1.104.0 in a clean Python environment. To capture requests, I pointed LiteLLM at a small local server standing in for Bedrock that saved every request body. For the live numbers I sent the same requests to Bedrock (Claude Sonnet 4.6, us-west-2, October 7 2026) with made-up prompts and a fresh random tag in each run, so old cache entries couldn't help. The capture and the live checks are scripts in the repo, so you can run them yourself: <a href="https://github.com/Haarris/cachecanary/blob/main/scripts/capture_litellm_requests.py">capture</a> and <a href="https://github.com/Haarris/cachecanary/blob/main/scripts/live_litellm_checks.py">live checks</a>. I also ran LiteLLM's own proxy server against live Bedrock, called with the OpenAI client as shown above, and got the same numbers as the library. Token counts move by a few tokens from run to run because each run uses a new random tag. On October 12 I captured the same requests again with LiteLLM 1.105.0: findings 1 to 3 and the profile ARN case are unchanged, and the Sonnet 5.5 case is fixed. LiteLLM changes quickly, so check your own version with the callback above.</p>
+<p>LiteLLM 1.104.0 in a clean Python environment. To capture requests, I pointed LiteLLM at a small local server standing in for Bedrock that saved every request body. For the live numbers I sent the same requests to Bedrock (Claude Sonnet 4.6, us-west-2, October 7 2026, and again on October 30 2026 after Bedrock changed how it counts tool calls) with made-up prompts and a fresh random tag in each run, so old cache entries couldn't help. The capture and the live checks are scripts in the repo, so you can run them yourself: <a href="https://github.com/Haarris/cachecanary/blob/main/scripts/capture_litellm_requests.py">capture</a> and <a href="https://github.com/Haarris/cachecanary/blob/main/scripts/live_litellm_checks.py">live checks</a>. I also ran LiteLLM's own proxy server against live Bedrock, called with the OpenAI client as shown above, and got the same numbers as the library. Token counts move by a few tokens from run to run because each run uses a new random tag. On October 12 I captured the same requests again with LiteLLM 1.105.0: findings 1 to 3 and the profile ARN case are unchanged, and the Sonnet 5.5 case is fixed. LiteLLM changes quickly, so check your own version with the callback above.</p>
 <p>Using Strands Agents or LangChain instead? Same tests: <a href="/strands/">Strands Agents</a> and <a href="/langchain/">LangChain</a>.</p>
 <p>More on why caching breaks on Bedrock, with the bug reports behind each case: <a href="https://harisfarooq.substack.com/p/five-ways-claude-prompt-caching-quietly">Five ways Claude prompt caching quietly breaks on Amazon Bedrock</a>.</p>
 <p>Want a quick number for your own app? Paste three totals from CloudWatch into the <a href="/check/">cache checker</a>. It runs in your browser, nothing to install.</p>

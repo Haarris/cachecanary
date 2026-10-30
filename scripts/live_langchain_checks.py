@@ -19,7 +19,6 @@ To include the application inference profile check, create a profile for Sonnet 
 
 import argparse
 import json
-import os
 import sys
 import time
 import uuid
@@ -128,16 +127,17 @@ def main() -> int:
         checks += [looked_up[1]["read"] > 1000, named[1]["read"] > 1000]
 
     # Agent loops: LangChain's real loop on the stand-in, then the exact requests replayed to Bedrock.
-    os.environ.setdefault("AWS_ACCESS_KEY_ID", "unused-by-the-stand-in")
     fake = Fake()
 
     def capture(script, *, invoke_route=False, middleware=None, manual_point=False):
         system, history = tag_prompts()
         fake.reset(script)
         if invoke_route:
-            model = ChatBedrock(model=MODEL, region_name=args.region, endpoint_url=fake.url, model_kwargs={"max_tokens": 50})
+            model = ChatBedrock(model=MODEL, region_name=args.region, endpoint_url=fake.url, model_kwargs={"max_tokens": 50},
+                                aws_access_key_id="unused-by-the-stand-in", aws_secret_access_key="unused-by-the-stand-in")
         else:
-            model = ChatBedrockConverse(model=MODEL, region_name=args.region, endpoint_url=fake.url, max_tokens=50)
+            model = ChatBedrockConverse(model=MODEL, region_name=args.region, endpoint_url=fake.url, max_tokens=50,
+                                        aws_access_key_id="unused-by-the-stand-in", aws_secret_access_key="unused-by-the-stand-in")
         if manual_point:
             system = SystemMessage(content=[{"type": "text", "text": system}, ChatBedrockConverse.create_cache_point()])
         agent = create_agent(model=model, tools=[lookup_order], system_prompt=system,
@@ -172,14 +172,15 @@ def main() -> int:
                 return kept(rows)
         return False
 
+    # Since Oct 2026 (by Oct 28) Bedrock counts a group of tool calls (and their results) as one lookback
+    # position, so every route keeps the whole conversation after a wide step.
     checks.append(kept_with_retry("ChatBedrockConverse, 21 parallel calls", ["tools:21", "text"]))
-    checks.append(not kept(replay("ChatBedrockConverse, 22 parallel calls", capture(["tools:22", "text"]))))
+    checks.append(kept_with_retry("ChatBedrockConverse, 40 parallel calls", ["tools:40", "text"]))
     checks.append(kept_with_retry("ChatBedrock, 10 parallel calls", ["tools:10", "text"], invoke_route=True))
-    invoke_11 = replay("ChatBedrock, 11 parallel calls", capture(["tools:11", "text"], invoke_route=True))
-    checks.append(invoke_11[1]["read"] == 0)  # nothing read: no separate system prompt marker on this route
+    checks.append(kept_with_retry("ChatBedrock, 40 parallel calls", ["tools:40", "text"], invoke_route=True))
     checks.append(kept_with_retry("middleware only, 11 parallel calls", ["tools:11", "text"]))
-    checks.append(not kept(replay("manual system cache point + middleware, 11 parallel calls",
-                                  capture(["tools:11", "text"], manual_point=True))))
+    checks.append(kept_with_retry("manual system cache point + middleware, 40 parallel calls", ["tools:40", "text"],
+                                  manual_point=True))
 
     # Context editing: stock clearing vs clearing in batches vs none, 13 calls with long tool results.
     tool_output["repeat"] = 40

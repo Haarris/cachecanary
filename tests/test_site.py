@@ -116,8 +116,8 @@ def test_llms_txt_follows_the_format_and_links_resolve_locally():
     links = re.findall(r"\]\((https://[^)]+)\)", text)
     assert "https://cachecanary.com/" in links and "https://github.com/Haarris/cachecanary#readme" in links
     # Facts that must stay in step with the code.
-    from cachecanary.models import MAX_BLOCKS_ADDED
-    assert f"{MAX_BLOCKS_ADDED} added still hits, {MAX_BLOCKS_ADDED + 1} always misses" in text
+    from cachecanary.models import MAX_LOOKBACK_POSITIONS
+    assert f"{MAX_LOOKBACK_POSITIONS} still hits, {MAX_LOOKBACK_POSITIONS + 1} always misses" in text
 
 
 def test_litellm_page_basics_and_links():
@@ -148,7 +148,7 @@ def test_litellm_page_outputs_match_real_output(capsys, monkeypatch):
     monkeypatch.chdir(SITE.parent / "tests" / "fixtures" / "litellm")
     page = html.unescape(re.sub(r"<[^>]+>", "", LITELLM))
     cmds = re.findall(r"\$ (cachecanary diff [^\n]+)", page)
-    assert len(cmds) == 3
+    assert len(cmds) == 2
     for cmd in cmds:
         args = cmd.split()[1:]
         cli.main(args)
@@ -158,52 +158,17 @@ def test_litellm_page_outputs_match_real_output(capsys, monkeypatch):
             assert line in page, f"{cmd}: {line}"
 
 
-def _page_helper():
+def test_litellm_page_setup_is_what_the_live_script_ran():
+    """The setup on the page is the two points the live checks used (system prompt + last message)."""
+    import ast
     import html
-    code = html.unescape(re.search(r'<pre class="yaml">(def cache_points.*?)\n\n\nresponse', LITELLM, re.S).group(1))
-    ns = {}
-    exec(code, ns)
-    return ns["cache_points"]
-
-
-def _calls(n):
-    return {"role": "assistant", "content": None,
-            "tool_calls": [{"id": f"t{i}", "type": "function", "function": {"name": "f", "arguments": "{}"}} for i in range(n)]}
-
-
-def _results(n):
-    return [{"role": "tool", "tool_call_id": f"t{i}", "content": "ok"} for i in range(n)]
-
-
-def test_litellm_page_helper_places_points_as_described():
-    cache_points = _page_helper()
-    system, user = {"role": "system", "content": "s"}, {"role": "user", "content": "u"}
-    indexes = lambda pts: sorted(p["index"] for p in pts if "index" in p)
-    # First call: system + end; the newest user message is the end, so LiteLLM merges the two.
-    pts = cache_points([system, user])
-    assert {"location": "message", "role": "system"} in pts and indexes(pts) == [-1, 1]
-    # A tool round: newest user message, first tool result of the round, end of conversation.
-    msgs = [system, user, _calls(12)] + _results(12)
-    assert indexes(cache_points(msgs)) == [-1, 1, 3]
-    # A second round: the round point moves to the newest round.
-    msgs2 = msgs + [_calls(3)] + _results(3)
-    assert indexes(cache_points(msgs2)) == [-1, 1, 16]
-    # The user speaks after the tools: no round point (the newest round is older than the user message).
-    msgs3 = msgs + [{"role": "assistant", "content": "done"}, user]
-    assert indexes(cache_points(msgs3)) == [-1, 16]
-    # Assistant tool calls with no results yet: no point past the end.
-    assert indexes(cache_points([system, user, _calls(2)])) == [-1, 1]
-    # No system message, no user message: still valid, never more than 4 points.
-    assert indexes(cache_points([_calls(1)] + _results(1))) == [-1, 1]
-    for m in (msgs, msgs2, msgs3):
-        assert len(cache_points(m)) <= 4
-
-
-def test_live_script_uses_the_page_helper():
-    import html
-    page = html.unescape(re.search(r'<pre class="yaml">(def cache_points.*?)\n\n\nresponse', LITELLM, re.S).group(1))
+    code = html.unescape(re.search(r"cache_control_injection_points=(\[.*?\]),\n\)", LITELLM, re.S).group(1))
     script = (SITE.parent / "scripts" / "live_litellm_checks.py").read_text()
-    assert page in script
+    in_script = re.search(r"^SYSTEM_AND_LAST = (\[.*\])$", script, re.M).group(1)
+    assert ast.literal_eval(code) == ast.literal_eval(in_script) == [
+        {"location": "message", "role": "system"}, {"location": "message", "index": -1}]
+    # The old 4-point helper for wide tool rounds is gone from both (Bedrock no longer needs it, Oct 2026).
+    assert "def cache_points" not in LITELLM and "def cache_points" not in script
 
 
 def test_social_preview_images():
@@ -238,7 +203,7 @@ def test_strands_page_outputs_match_real_output(capsys, monkeypatch):
     monkeypatch.chdir(SITE.parent / "tests" / "fixtures" / "strands")
     page = html.unescape(re.sub(r"<[^>]+>", "", STRANDS))
     cmds = re.findall(r"\$ (cachecanary (?:diff|lint) [^\n]+)", page)
-    assert len(cmds) == 3
+    assert len(cmds) == 2
     for cmd in cmds:
         cli.main(cmd.split()[1:])
         out = capsys.readouterr().out.strip()
@@ -287,39 +252,6 @@ def _with_fake_strands(code):
                 sys.modules[k] = v
 
 
-def test_strands_page_hook_places_points_as_described():
-    import types
-    hook = _with_fake_strands(_strands_code("from strands.hooks import", "\n\n\nagent = Agent("))["BedrockCachePoints"]()
-    CP = {"cachePoint": {"type": "default"}}
-
-    def place(messages):
-        hook.place(types.SimpleNamespace(agent=types.SimpleNamespace(messages=messages)))
-        return [[i for i, b in enumerate(m["content"]) if "cachePoint" in b] for m in messages]
-
-    typed = lambda text: {"role": "user", "content": [{"text": text}]}
-    calls = lambda n: {"role": "assistant", "content": [{"toolUse": {"toolUseId": f"t{i}"}} for i in range(n)]}
-    results = lambda n: {"role": "user", "content": [{"toolResult": {"toolUseId": f"t{i}"}} for i in range(n)]}
-    # First call: the typed message is the end, one point.
-    assert place([typed("hi")]) == [[1]]
-    # A tool round: the typed message, the first result, the end (3 message points + system = 4).
-    assert place([typed("hi"), calls(12), results(12)]) == [[1], [], [1, 13]]
-    # Old points are removed: the next round moves them, never more than 3 in messages.
-    msgs = [typed("hi"), calls(12), results(12)]
-    place(msgs)
-    msgs += [calls(3), results(3)]
-    assert place(msgs) == [[1], [], [], [], [1, 4]]
-    # One tool result: a single point at the end.
-    assert place([typed("hi"), calls(1), results(1)]) == [[1], [], [1]]
-    # The person speaks after the tools: only their message carries a point.
-    assert place([typed("hi"), calls(2), results(2), {"role": "assistant", "content": [{"text": "done"}]}, typed("more")]) == [[], [], [], [], [1]]
-    # A non-PDF document at the end: the point goes before it; a PDF keeps the point after it.
-    doc = lambda fmt: {"role": "user", "content": [{"text": "read"}, {"document": {"format": fmt}}]}
-    assert place([doc("txt")]) == [[1]] and place([doc("pdf")]) == [[2]]
-    # A message that is only a non-PDF document gets no point (Bedrock would reject it).
-    assert place([{"role": "user", "content": [{"document": {"format": "csv"}}]}]) == [[]]
-    assert place([]) == []
-
-
 def test_strands_page_trim_in_chunks():
     import types
     code = _strands_code("class TrimInChunks", "\n\n\nagent = Agent(")
@@ -344,9 +276,10 @@ def test_strands_page_trim_in_chunks():
 
 def test_strands_live_script_uses_the_page_code():
     script = (SITE.parent / "scripts" / "live_strands_checks.py").read_text()
-    hook = _strands_code("class BedrockCachePoints", "\n\n\nagent = Agent(")
     trim = _strands_code("class TrimInChunks", "\n\n\nagent = Agent(")
-    assert hook in script and trim in script
+    assert trim in script
+    # The hook for wide tool fan-outs is gone: Bedrock no longer needs it (Oct 2026).
+    assert "BedrockCachePoints" not in STRANDS and "BedrockCachePoints" not in script
 
 
 def test_icons_for_browsers_and_search_results():
@@ -420,7 +353,7 @@ def test_langchain_page_outputs_match_real_output(capsys, monkeypatch):
     monkeypatch.chdir(SITE.parent / "tests" / "fixtures" / "langchain")
     page = html.unescape(re.sub(r"<[^>]+>", "", LANGCHAIN))
     cmds = re.findall(r"\$ (cachecanary (?:diff|lint) [^\n]+)", page)
-    assert len(cmds) == 3
+    assert len(cmds) == 2
     for cmd in cmds:
         cli.main(cmd.split()[1:])
         out = capsys.readouterr().out.strip()

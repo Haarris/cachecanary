@@ -1,4 +1,8 @@
-"""Measure where Bedrock's ~20-block cache lookback actually ends.
+"""Measure where Bedrock's ~20-block cache lookback actually ends (the first measurement, early Oct 2026).
+
+Historical: when this ran, Bedrock counted every block, so 22+ blocks of parallel tool calls missed.
+By Oct 28 2026 a run of tool calls (or tool results) counts as one position and these shapes all
+hit. scripts/live_lookback_positions.py is the current check.
 
 Request A: tools + a short uncached system prompt + one long user turn ending in a cache point.
 Request B: the same history with that cache point removed, then an assistant turn with N parallel

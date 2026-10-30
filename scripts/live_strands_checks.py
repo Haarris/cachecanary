@@ -19,7 +19,6 @@ To include the application inference profile check, create a profile for Sonnet 
 
 import argparse
 import json
-import os
 import sys
 import time
 import uuid
@@ -29,47 +28,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fake_bedrock_stream import Fake  # noqa: E402
 
 from strands.agent.conversation_manager import SlidingWindowConversationManager  # noqa: E402
-from strands.hooks import BeforeModelCallEvent, HookProvider, HookRegistry  # noqa: E402
 
 MODEL = "us.anthropic.claude-sonnet-4-6"
 
 
-# Same hook and conversation manager as on the page (tests/test_site.py checks they match).
-class BedrockCachePoints(HookProvider):
-    """Place cache points in the messages before every model call."""
-
-    def register_hooks(self, registry: HookRegistry, **kwargs) -> None:
-        registry.add_callback(BeforeModelCallEvent, self.place)
-
-    def place(self, event: BeforeModelCallEvent) -> None:
-        messages = event.agent.messages
-        for message in messages:  # drop the points from the previous call
-            message["content"] = [b for b in message["content"]
-                                  if "cachePoint" not in b]
-        typed = [i for i, m in enumerate(messages) if m["role"] == "user"
-                 and not any("toolResult" in b for b in m["content"])]
-        if typed:  # the newest message a person typed
-            newest = messages[typed[-1]]["content"]
-            self._add(newest, len(newest))
-        last = messages[-1]["content"] if messages else []
-        if messages and (not typed or typed[-1] != len(messages) - 1):
-            if any("toolResult" in b for b in last) and len(last) > 1:
-                self._add(last, 1)  # after the first result of the round
-            self._add(last, len(last))  # the end of the conversation
-
-    @staticmethod
-    def _add(content, index):
-        # Bedrock rejects a cache point right after a non-PDF document,
-        # so step back past those.
-        def other_document(block):
-            return block.get("document", {}).get("format", "pdf") != "pdf"
-
-        while index > 0 and other_document(content[index - 1]):
-            index -= 1
-        if index > 0 and "cachePoint" not in content[index - 1]:
-            content.insert(index, {"cachePoint": {"type": "default"}})
-
-
+# Same conversation manager as on the page (tests/test_site.py checks they match).
 class TrimInChunks(SlidingWindowConversationManager):
     """Trim old messages in bulk, so the cached start rarely changes."""
 
@@ -173,17 +136,18 @@ def main() -> int:
         checks += [arn_auto[1]["read"] == 0 and arn_auto[1]["write"] == 0, arn_anthropic[1]["read"] > 1000]
 
     # Agent loops: Strands' real loop on the stand-in, then the exact requests replayed to Bedrock.
-    os.environ.setdefault("AWS_ACCESS_KEY_ID", "unused-by-the-stand-in")
     fake = Fake()
 
-    def capture(script, prompts, *, hook=False, manager=None):
+    def capture(script, prompts, *, manager=None):
         system, history = tag_prompts()
         fake.reset(script)
-        model = BedrockModel(model_id=MODEL, endpoint_url=fake.url, region_name=args.region,
-                             **({} if hook else {"cache_config": CacheConfig(strategy="auto")}))
+        # The stand-in needs no real credentials; a full fake pair keeps them out of the live checks.
+        stand_in = boto3.Session(aws_access_key_id="unused-by-the-stand-in",
+                                 aws_secret_access_key="unused-by-the-stand-in", region_name=args.region)
+        model = BedrockModel(model_id=MODEL, endpoint_url=fake.url, boto_session=stand_in,
+                             cache_config=CacheConfig(strategy="auto"))
         agent = Agent(model=model, tools=[lookup_order], callback_handler=None, conversation_manager=manager,
-                      system_prompt=[{"text": system}, {"cachePoint": {"type": "default"}}] if hook else system,
-                      hooks=[BedrockCachePoints()] if hook else [])
+                      system_prompt=system)
         for i, prompt in enumerate(prompts):
             agent((history + " " if i == 0 else "") + prompt)
         return [request["body"] for request in fake.requests]
@@ -205,13 +169,14 @@ def main() -> int:
 
     ten = replay("auto, 10 parallel calls", capture(["tools:10", "text"], ["Check my orders."]))
     eleven = replay("auto, 11 parallel calls", capture(["tools:11", "text"], ["Check my orders."]))
-    checks += [ten[1]["read"] >= ten[0]["prompt"] - 5, eleven[1]["read"] < eleven[0]["prompt"] / 2]
+    # Since Oct 2026 (by Oct 28) Bedrock counts a group of tool calls (and their results) as one lookback
+    # position, so auto mode keeps the whole conversation even after a wide step.
+    checks += [ten[1]["read"] >= ten[0]["prompt"] - 5, eleven[1]["read"] >= eleven[0]["prompt"] - 5]
 
-    session = replay("hook session", capture(["tools:12", "tools:1", "tools:20", "text", "tools:3", "tools:21", "text"],
-                                             ["Check my orders.", "Now refund order 3-4."], hook=True))
-    for previous, row in zip(session[:5], session[1:6]):  # every step up to the 3-call round reads it all
+    session = replay("auto session", capture(["tools:12", "tools:1", "tools:20", "text", "tools:3", "tools:40", "text"],
+                                             ["Check my orders.", "Now refund order 3-4."]))
+    for previous, row in zip(session[:6], session[1:7]):  # every step reads the whole previous request
         checks.append(row["read"] >= previous["prompt"] - 5)
-    checks.append(session[6]["read"] < session[5]["prompt"] - 5)  # the 21-call round loses the round before
 
     chat = [f"Question {i}: summarise order batch {i}." for i in range(26)]
     default = replay("default window, long chat", capture(["text:40"] * 26, chat), only=set(range(19, 26)))
@@ -220,10 +185,10 @@ def main() -> int:
     checks += [all(r["read"] < r["prompt"] / 4 for r in default[2:]),  # after the trim, every turn rewrites
                all(r["read"] >= p["prompt"] - 5 for p, r in zip(chunked[2:], chunked[3:]))]
 
-    # A fully live agent with the hook: the model chooses its own tool calls.
+    # A fully live agent in auto mode: the model chooses its own tool calls.
     system, _ = tag_prompts()
-    agent = Agent(model=live_model(model_id=MODEL), tools=[lookup_order], hooks=[BedrockCachePoints()],
-                  callback_handler=None, system_prompt=[{"text": system}, {"cachePoint": {"type": "default"}}])
+    agent = Agent(model=live_model(model_id=MODEL, cache_config=CacheConfig(strategy="auto")), tools=[lookup_order],
+                  callback_handler=None, system_prompt=system)
     before = totals(agent)
     reads = []
     for prompt in ("Look up orders 1, 2, 3, 4, 5 and 6 at the same time (call the tool for each in parallel), "
@@ -233,7 +198,7 @@ def main() -> int:
         delta = {k: now[k] - before[k] for k in now}
         before = now
         calls = [sum("toolUse" in b for b in m["content"]) for m in agent.messages if m["role"] == "assistant"]
-        show({"case": "live agent with the hook", "prompt": prompt[:28], **delta, "tool_calls_per_turn": calls})
+        show({"case": "live agent, auto mode", "prompt": prompt[:28], **delta, "tool_calls_per_turn": calls})
         reads.append(delta["read"])
     checks.append(reads[1] > reads[0] > 0)
 

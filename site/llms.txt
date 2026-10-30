@@ -8,7 +8,7 @@ What it checks, each verified against live Amazon Bedrock (Claude Sonnet 4.6, us
 
 - Dynamic text (dates, times, IDs) before a cache point, which makes every request a cache miss.
 - A cached prefix shorter than the model's minimum (512 to 4,096 tokens depending on the model), which caches nothing without an error.
-- More than 21 content blocks added between two cache points: Bedrock finds an earlier cache entry only up to 21 blocks back (21 added still hits, 22 always misses). Every tool call and tool result counts as a block.
+- More than 21 lookback positions added between two cache points: Bedrock finds an earlier cache entry only up to 21 positions back (21 still hits, 22 always misses; re-measured October 30 2026). Each text block is one position, a group of tool calls or tool results side by side is one, and thinking blocks don't count. On October 7 2026 Bedrock still counted every tool call and result, so many parallel tool calls lost the cache; by October 28 they no longer did.
 - A cache point with nothing before it in its own message, system or tools list: Bedrock rejects the request ("There is nothing available to cache").
 - A Converse cachePoint inside a toolResult's content: boto3 refuses it, and over plain HTTP Bedrock accepts the request but caches nothing.
 - Thinking or effort settings changed between requests: on Bedrock this throws away the whole cache, system prompt included. No effort setting behaves like "high".
@@ -19,9 +19,9 @@ What it checks, each verified against live Amazon Bedrock (Claude Sonnet 4.6, us
 
 - [README](https://github.com/Haarris/cachecanary#readme): install, commands, every check, GitHub Action usage, limits
 - [Website](https://cachecanary.com/): overview, how prompt caching works, examples with real output
-- [LiteLLM guide](https://cachecanary.com/litellm/): what LiteLLM 1.104.0 sends to Bedrock, where cache_control_injection_points lose the cache (role "user", parallel tool calls, dropped 1-hour lifetime), and a tested setup that keeps it
-- [Strands Agents guide](https://cachecanary.com/strands/): what Strands Agents 1.58.1 sends to Bedrock: caching off by default, more than 10 parallel tool calls losing the conversation, the default 40-message window losing the cache every turn, inference profile ARNs needing strategy "anthropic", and lifetime settings Bedrock rejects, with a tested hook and conversation manager
-- [LangChain guide](https://cachecanary.com/langchain/): what langchain-aws 1.8.1 and LangChain 1.4.3 send to Bedrock from create_agent: caching off until you add BedrockPromptCachingMiddleware, ChatBedrock losing the whole cache after 10 parallel tool calls (ChatBedrockConverse holds 21), ClearToolUsesEdit context editing rewriting the conversation on every call, and your own cache point turning off LangChain's extra one, with a tested fix for each
+- [LiteLLM guide](https://cachecanary.com/litellm/): what LiteLLM 1.104.0 sends to Bedrock, where cache_control_injection_points lose the cache (role "user", a point on an assistant tool-call message, dropped 1-hour lifetime), and a tested setup that keeps it
+- [Strands Agents guide](https://cachecanary.com/strands/): what Strands Agents 1.58.1 sends to Bedrock: caching off by default, the default 40-message window losing the cache every turn, inference profile ARNs needing strategy "anthropic", and lifetime settings Bedrock rejects, with a tested conversation manager; many parallel tool calls keep the cache since Bedrock's October 2026 change
+- [LangChain guide](https://cachecanary.com/langchain/): what langchain-aws 1.8.1 and LangChain 1.4.3 send to Bedrock from create_agent: caching off until you add BedrockPromptCachingMiddleware, ClearToolUsesEdit context editing rewriting the conversation on every call, with a tested fix; many parallel tool calls keep the cache with ChatBedrockConverse and ChatBedrock since Bedrock's October 2026 change
 - [Langfuse guide](https://cachecanary.com/langfuse/): reading the real Bedrock cache hit rate from Langfuse traces, tested with Strands 1.61.1 and 1.53.0, LiteLLM 1.106.0 (langfuse callback and langfuse_otel) and langchain-aws 1.9.0 against Langfuse 4.64: Strands before 1.54 makes the cache look perfect (input 0 on cache reads, writes under cache_write_input_tokens which Langfuse does not recognise) and LiteLLM's langfuse callback counts cache writes twice; CacheCanary rebuilds the uncached input from the total and counts only generations
 - [Cache checker](https://cachecanary.com/check/): in-browser calculator, paste the CloudWatch sums of InputTokenCount (excludes cached tokens), CacheReadInputTokenCount and CacheWriteInputTokenCount for one model to get the hit rate, input cost at Bedrock list price and dollars lost to misses; same maths and prices as the CLI, sends nothing
 - [PyPI](https://pypi.org/project/cachecanary/): package and release history
@@ -34,5 +34,5 @@ What it checks, each verified against live Amazon Bedrock (Claude Sonnet 4.6, us
 
 ## Optional
 
-- [Live lookback measurement script](https://github.com/Haarris/cachecanary/blob/main/scripts/live_lookback_boundary.py)
+- [Live lookback check (positions, October 30 2026)](https://github.com/Haarris/cachecanary/blob/main/scripts/live_lookback_positions.py)
 - [Live agreement check for the 0.3 rules](https://github.com/Haarris/cachecanary/blob/main/scripts/live_v03_checks.py)

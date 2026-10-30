@@ -7,8 +7,8 @@ compare consecutive requests and name the first thing that changed inside the ca
 import json
 from dataclasses import dataclass
 
-from cachecanary.models import MAX_BLOCKS_ADDED
-from cachecanary.request import NormalizedRequest
+from cachecanary.models import MAX_LOOKBACK_POSITIONS
+from cachecanary.request import Block, NormalizedRequest
 
 
 @dataclass
@@ -87,14 +87,17 @@ def explain(a: NormalizedRequest, b: NormalizedRequest) -> list[MissReason]:
 
     # B reads A's entry only if one of B's checkpoints sits at A's last checkpoint or within reach after it.
     later = [i for i in b.checkpoint_indexes if i >= a_last]
-    if later and later[0] - a_last > MAX_BLOCKS_ADDED:
-        added = later[0] - a_last
+    added = lookback_positions(b.blocks, a_last, later[0]) if later else 0
+    if added > MAX_LOOKBACK_POSITIONS:
         reasons.append(MissReason(
             "lookback-exceeded",
-            f"{added} blocks were added between the previous checkpoint and the next one. Bedrock only finds an "
-            f"earlier cache entry up to {MAX_BLOCKS_ADDED} blocks back ({MAX_BLOCKS_ADDED} added still hits, "
-            f"{MAX_BLOCKS_ADDED + 1} misses), so this call writes the cache again. Add a checkpoint in between "
-            "(common after many parallel tool calls).",
+            f"{added} lookback positions were added between the previous checkpoint and the next one "
+            f"({later[0] - a_last} blocks). Bedrock only finds an earlier cache entry up to "
+            f"{MAX_LOOKBACK_POSITIONS} positions back ({MAX_LOOKBACK_POSITIONS} added still hits, "
+            f"{MAX_LOOKBACK_POSITIONS + 1} misses), so this call writes the cache again. Each text block is one "
+            "position, a group of tool calls or tool results side by side is one (the block with the cache point "
+            "always counts on its own), and thinking blocks don't count. Add a checkpoint in between (common in long chains of single tool calls or many separate "
+            "text blocks).",
             b.blocks[later[0]].location,
         ))
 
@@ -121,6 +124,31 @@ def explain(a: NormalizedRequest, b: NormalizedRequest) -> list[MissReason]:
 # New blocks after an unmoved conversation checkpoint before it is worth pointing out
 # (one agent round trip is at least a tool call and its result).
 STUCK_MIN_ADDED = 2
+
+
+_RUN_KINDS = ("tool_use", "tool_result")
+
+
+def lookback_positions(blocks: list[Block], start: int, end: int) -> int:
+    """Positions Bedrock counts from the checkpoint at blocks[start] back-to-front to blocks[end].
+
+    Counts blocks start+1 .. end. Measured on live Bedrock (Oct 30 2026): a run of consecutive tool-use
+    blocks in one message is one position, and so is a run of tool results; thinking blocks are not
+    counted; every other block is one. The checkpoint block itself is always its own position, so a run
+    of tool results that ends on the checkpoint counts as two.
+    """
+    positions = 0
+    prev: Block | None = None
+    for i in range(start + 1, end + 1):
+        block = blocks[i]
+        if block.kind == "reasoning" and i != end:
+            continue
+        same_run = (prev is not None and block.kind in _RUN_KINDS and block.kind == prev.kind
+                    and block.message is not None and block.message == prev.message)
+        if not same_run or i == end:
+            positions += 1
+        prev = block
+    return positions
 
 
 def _thinking_label(key: str | None) -> str:

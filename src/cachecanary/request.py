@@ -21,6 +21,10 @@ class Block:
     content: str        # canonical JSON of the block without cache markers
     checkpoint: bool = False
     ttl: str | None = None  # "5m" | "1h" when checkpoint
+    # What the block is, for counting Bedrock's lookback positions: "tool_use" | "tool_result" |
+    # "reasoning" | "other". message is the index of the message holding it (None outside messages).
+    kind: str = "other"
+    message: int | None = None
 
 
 @dataclass
@@ -51,6 +55,26 @@ class NormalizedRequest:
     def checkpoint_markers(self) -> int:
         """Markers as Bedrock counts them toward the per-request maximum."""
         return len(self.checkpoint_indexes) + len(self.duplicate_checkpoints) + len(self.orphan_checkpoints)
+
+
+# Converse content keys and InvokeModel block types that matter for lookback counting.
+_CONVERSE_KINDS = {"toolUse": "tool_use", "toolResult": "tool_result", "reasoningContent": "reasoning"}
+_INVOKE_KINDS = {"tool_use": "tool_use", "tool_result": "tool_result",
+                 "thinking": "reasoning", "redacted_thinking": "reasoning"}
+
+
+def _converse_kind(item) -> str:
+    if isinstance(item, dict):
+        for key, kind in _CONVERSE_KINDS.items():
+            if key in item:
+                return kind
+    return "other"
+
+
+def _invoke_kind(item) -> str:
+    if isinstance(item, dict):
+        return _INVOKE_KINDS.get(item.get("type"), "other")
+    return "other"
 
 
 def _canon(obj) -> str:
@@ -143,7 +167,8 @@ def _normalize_converse(payload: dict, req: NormalizedRequest) -> None:
                     if isinstance(part, dict) and "cachePoint" in part:
                         req.nested_checkpoints.append(f"{loc}.toolResult.content[{k}]")
             body = item if isinstance(item, dict) else {"value": item}
-            req.blocks.append(Block("messages", loc, _canon({"role": msg.get("role"), **body})))
+            req.blocks.append(Block("messages", loc, _canon({"role": msg.get("role"), **body}),
+                                    kind=_converse_kind(item), message=m))
     extra = payload.get("additionalModelRequestFields")
     if isinstance(extra, dict):
         req.thinking = _thinking_key(extra.get("thinking"))
@@ -189,6 +214,7 @@ def _normalize_invoke(payload: dict, req: NormalizedRequest) -> None:
             if inner and not block.checkpoint:
                 block.checkpoint, block.ttl = True, _ttl(inner[-1]["cache_control"])
             block.content = _canon({"role": msg.get("role"), "block": json.loads(block.content)})
+            block.kind, block.message = _invoke_kind(item), m
             req.blocks.append(block)
     req.thinking = _thinking_key(payload.get("thinking"))
     req.effort = _effort(payload.get("output_config"))

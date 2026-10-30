@@ -31,7 +31,7 @@
  "url": "https://cachecanary.com/",
  "applicationCategory": "DeveloperApplication",
  "operatingSystem": "macOS, Linux, Windows",
- "softwareVersion": "0.4.0",
+ "softwareVersion": "0.4.1",
  "downloadUrl": "https://pypi.org/project/cachecanary/",
  "license": "https://www.apache.org/licenses/LICENSE-2.0",
  "offers": {
@@ -177,7 +177,7 @@ system-changed: The system prompt changed inside the cached prefix (look for dat
   <li>A small edit put today's date, a request ID or the user's name into the system prompt.</li>
   <li>Your tools are listed in a different order on each request.</li>
   <li>Thinking or effort settings changed between two calls. On Bedrock that throws away the whole cache, system prompt included.</li>
-  <li>An agent ran a dozen tools at once. Bedrock only searches back about 20 pieces of the conversation (messages, tool calls and tool results) for the cached part, so it can lose track of it.</li>
+  <li>An agent made a long chain of tool calls one after another, or added lots of separate text blocks between two cache points. Bedrock only searches back about 20 steps for the cached part, so it can lose track of it. (Tool calls made at the same time count as one step.)</li>
 </ul>
 <p>I wrote these up in more detail, with the bug reports behind each one and the lookback limit I measured: <a href="https://harisfarooq.substack.com/p/five-ways-claude-prompt-caching-quietly">Five ways Claude prompt caching quietly breaks on Amazon Bedrock</a>.</p>
 <p>Anthropic added cache diagnostics to its own API, so you can see why a request missed. They don't cover Bedrock. That's the gap CacheCanary fills.</p>
@@ -185,9 +185,9 @@ system-changed: The system prompt changed inside the cached prefix (look for dat
 <h2 id="guides">Guides for your framework</h2>
 <p>For each framework I captured exactly what it sends to Bedrock, checked it with CacheCanary and tested it on live Bedrock. Each of those guides shows where the cache is lost and a setup that keeps it. The Langfuse guide shows how to read your real hit rate from your traces.</p>
 <ul>
-  <li><a href="/litellm/">Prompt caching with LiteLLM on Amazon Bedrock</a>: <code>role: "user"</code> caching your oldest messages, wide tool calls, and a 1-hour cache lifetime that is quietly dropped.</li>
-  <li><a href="/strands/">Prompt caching with Strands Agents on Amazon Bedrock</a>: caching that is off by default, wide tool calls, and long chats that lose the cache on every turn.</li>
-  <li><a href="/langchain/">Prompt caching with LangChain on Amazon Bedrock</a>: ChatBedrock losing the whole cache after 10 tool calls, context editing that rewrites the conversation on every call, and your own cache points turning off LangChain's extra one.</li>
+  <li><a href="/litellm/">Prompt caching with LiteLLM on Amazon Bedrock</a>: <code>role: "user"</code> caching your oldest messages, a cache point that is silently ignored, and a 1-hour cache lifetime that is quietly dropped.</li>
+  <li><a href="/strands/">Prompt caching with Strands Agents on Amazon Bedrock</a>: caching that is off by default, long chats that lose the cache on every turn, and lifetime settings Bedrock rejects.</li>
+  <li><a href="/langchain/">Prompt caching with LangChain on Amazon Bedrock</a>: caching that is off until you add the middleware, and context editing that rewrites the conversation on every call.</li>
   <li><a href="/langfuse/">Prompt cache hit rates from Langfuse</a>: reading your real hit rate from the traces you already have, Strands before 1.54 making the cache look perfect, and LiteLLM's callback counting cache writes twice.</li>
 </ul>
 

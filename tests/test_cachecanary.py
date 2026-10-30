@@ -172,19 +172,26 @@ def test_model_change():
     assert diff.explain(a, b)[0].code == "model-changed"
 
 
-def test_lookback_exceeded_after_many_tool_blocks():
+def test_lookback_exceeded_after_a_long_chain_of_single_tool_calls():
     base = [{"role": "user", "content": [{"text": "start"}, {"cachePoint": {"type": "default"}}]}]
     a_req = converse_request(messages=base)
+    b_msgs = [{"role": "user", "content": [{"text": "start"}]}]
+    for i in range(11):  # 11 rounds of one call + one result = 22 positions
+        b_msgs.append({"role": "assistant", "content": [{"toolUse": {"toolUseId": f"t{i}", "name": "x", "input": {}}}]})
+        b_msgs.append({"role": "user", "content": [{"toolResult": {"toolUseId": f"t{i}", "content": [{"text": "ok"}]}}]})
+    b_msgs[-1]["content"].append({"cachePoint": {"type": "default"}})
+    reasons = diff.explain(normalize(a_req), normalize(converse_request(messages=b_msgs)))
+    assert "lookback-exceeded" in {r.code for r in reasons}
+
+
+def test_many_parallel_tool_calls_no_longer_exceed_the_lookback():
+    base = [{"role": "user", "content": [{"text": "start"}, {"cachePoint": {"type": "default"}}]}]
     calls = [{"toolUse": {"toolUseId": f"t{i}", "name": "x", "input": {}}} for i in range(12)]
     results = [{"toolResult": {"toolUseId": f"t{i}", "content": [{"text": "ok"}]}} for i in range(12)]
-    b_msgs = [
-        {"role": "user", "content": [{"text": "start"}]},
-        {"role": "assistant", "content": calls},
-        {"role": "user", "content": results + [{"cachePoint": {"type": "default"}}]},
-    ]
-    b_req = converse_request(messages=b_msgs)
-    reasons = diff.explain(normalize(a_req), normalize(b_req))
-    assert "lookback-exceeded" in {r.code for r in reasons}
+    b_msgs = [{"role": "user", "content": [{"text": "start"}]}, {"role": "assistant", "content": calls},
+              {"role": "user", "content": results + [{"cachePoint": {"type": "default"}}]}]
+    reasons = diff.explain(normalize(converse_request(messages=base)), normalize(converse_request(messages=b_msgs)))
+    assert "lookback-exceeded" not in {r.code for r in reasons}
 
 
 def test_history_edit_detected():

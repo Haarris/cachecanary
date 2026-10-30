@@ -83,7 +83,8 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     last_message = [{"location": "message", "role": "system"}, {"location": "message", "index": -1}]
 
-    # Finding 2: an agent step with 12 parallel tool calls.
+    # Finding 2: an agent step with 12 parallel tool calls. On Oct 7 2026 this lost the cache; Bedrock now
+    # counts a group of tool calls as one lookback position, so cachecanary diff reports it as kept.
     turn1 = [{"role": "system", "content": SYSTEM},
              {"role": "user", "content": "Check orders 1 to 12 and tell me which shipped."}]
     capture(out / "agent-turn1.json", model=SONNET_46, tools=TOOLS, messages=turn1,

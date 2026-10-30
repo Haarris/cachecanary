@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LangChain prompt caching on Amazon Bedrock: what actually gets cached</title>
-<meta name="description" content="I captured the exact Bedrock requests LangChain (langchain-aws 1.8.1) sends from create_agent and tested them on live Bedrock. ChatBedrock, context editing and your own cache points lose the cache. Here is a setup that keeps it.">
+<meta name="description" content="I captured the exact Bedrock requests LangChain (langchain-aws 1.8.1) sends from create_agent and tested them on live Bedrock. Caching is off until you add the middleware, and context editing loses the cache. Here is a setup that keeps it.">
 <meta property="og:title" content="LangChain prompt caching on Amazon Bedrock">
-<meta property="og:description" content="What LangChain actually sends to Bedrock, four ways it quietly costs you, and a setup that keeps the cache. Tested on live Bedrock.">
+<meta property="og:description" content="What LangChain actually sends to Bedrock, the ways it quietly costs you, and a setup that keeps the cache. Tested on live Bedrock.">
 <meta property="og:url" content="https://cachecanary.com/langchain/">
 <meta property="og:type" content="article">
 <meta property="og:image" content="https://cachecanary.com/og-langchain.png?v=1">
@@ -27,10 +27,10 @@
  "@context": "https://schema.org",
  "@type": "TechArticle",
  "headline": "Prompt caching with LangChain on Amazon Bedrock",
- "description": "I captured the exact Bedrock requests LangChain (langchain-aws 1.8.1) sends from create_agent and tested them on live Bedrock. ChatBedrock, context editing and your own cache points lose the cache. Here is a setup that keeps it.",
+ "description": "I captured the exact Bedrock requests LangChain (langchain-aws 1.8.1) sends from create_agent and tested them on live Bedrock. Caching is off until you add the middleware, and context editing loses the cache. Here is a setup that keeps it.",
  "image": "https://cachecanary.com/og-langchain.png?v=1",
  "datePublished": "2026-10-07",
- "dateModified": "2026-10-07",
+ "dateModified": "2026-10-30",
  "author": {
   "@type": "Person",
   "name": "Haris Farooq",
@@ -103,9 +103,9 @@
 <main>
 <h1>Prompt caching with LangChain on Amazon Bedrock</h1>
 
-<p class="lead">LangChain talks to Bedrock through the langchain-aws package, and its agents add caching with a middleware. I captured the exact requests langchain-aws 1.8.1 and LangChain 1.4.3 send while <code>create_agent</code> runs its real agent loop, checked them with CacheCanary, and ran every case on live Bedrock (Claude Sonnet 4.6, us-west-2, October 2026).</p>
+<p class="lead">LangChain talks to Bedrock through the langchain-aws package, and its agents add caching with a middleware. I captured the exact requests langchain-aws 1.8.1 and LangChain 1.4.3 send while <code>create_agent</code> runs its real agent loop, checked them with CacheCanary, and ran every case on live Bedrock (Claude Sonnet 4.6, us-west-2, October 2026, re-checked October 30).</p>
 
-<p>The short version: caching is off until you add the middleware, and with <code>ChatBedrockConverse</code> it then works well, even with many tool calls at once. Three things quietly throw it away: using <code>ChatBedrock</code> instead, LangChain's own context editing, and adding a cache point of your own.</p>
+<p>The short version: caching is off until you add the middleware, and it then works well, even with many tool calls at once. The thing that quietly throws it away is LangChain's own context editing.</p>
 
 <h2>The setup I'd use</h2>
 <pre class="yaml">from langchain.agents import create_agent
@@ -118,7 +118,7 @@ agent = create_agent(
     system_prompt=SYSTEM_PROMPT,
     middleware=[BedrockPromptCachingMiddleware()],
 )</pre>
-<p>Don't add cache points of your own on top (finding 4), and if you clear old tool results, clear them in batches (finding 3).</p>
+<p>You don't need cache points of your own on top, and if you clear old tool results, clear them in batches (finding 3).</p>
 
 <h2>What I found</h2>
 
@@ -135,20 +135,21 @@ agent = create_agent(
 </div>
 <p>Outside an agent, pass the same setting per call: <code>model.invoke(messages, cache_control={"type": "ephemeral"})</code>. With the middleware, <code>ChatBedrockConverse</code> puts a cache point after the tool list, after the system prompt, at the end of the newest message and at the end of the message before it.</p>
 
-<h3>2. Use ChatBedrockConverse, not ChatBedrock</h3>
-<p>Bedrock only looks back 21 blocks from a cache point to find the previous cache entry, and every tool call and every tool result is a block. With <code>ChatBedrockConverse</code>, the point on the message before the newest one sits right after the model's tool calls, close enough to find the previous entry, so the cache holds for up to 21 tool calls at once. <code>ChatBedrock</code> (the InvokeModel API) gets only one point, at the end of the newest message, and sends the system prompt as plain text with no point of its own. So at 11 tool calls the previous entry is out of reach, and there is nothing earlier to fall back on: the whole prompt, system prompt included, is written to the cache again. On live Bedrock, with a long customer history in the first message:</p>
+<h3>2. Many tool calls at once: fine since October 2026</h3>
+<p>Bedrock only looks back about 20 positions from a cache point to find the previous cache entry. When I first tested this on October 7 2026, it counted every tool call and every tool result as its own position. Back then <code>ChatBedrock</code> (the InvokeModel API, one cache point at the end of the newest message) lost the whole cache at 11 tool calls at once, <code>ChatBedrockConverse</code> at 22, and with a cache point of your own on the system message it lost it at 11 again, because the middleware then skips its point on the message before the newest one. By October 28 Bedrock counted a group of tool calls side by side as one position, and the same for their results, as <a href="https://platform.claude.com/docs/en/build-with-claude/prompt-caching">Anthropic documents for its own API</a>. The same requests on live Bedrock, with a long customer history in the first message:</p>
 <div class="scroll">
 <table>
-  <thead><tr><th>Next step</th><th>Read from cache</th><th>Written again</th></tr></thead>
+  <thead><tr><th>Next step</th><th>Read from cache</th><th>On October 7</th></tr></thead>
   <tbody>
-    <tr><td><code>ChatBedrock</code>, 10 tool calls at once</td><td>6,930</td><td>1,783</td></tr>
-    <tr><td><code>ChatBedrock</code>, 11 tool calls at once</td><td>0</td><td>8,890</td></tr>
-    <tr><td><code>ChatBedrockConverse</code>, 21 tool calls at once</td><td>6,930</td><td>3,708</td></tr>
-    <tr><td><code>ChatBedrockConverse</code>, 22 tool calls at once</td><td>2,222 (system prompt only)</td><td>8,587</td></tr>
+    <tr><td><code>ChatBedrock</code>, 10 tool calls at once</td><td>6,928</td><td>6,930</td></tr>
+    <tr><td><code>ChatBedrock</code>, 40 tool calls at once</td><td>6,930</td><td>0 at 11 calls</td></tr>
+    <tr><td><code>ChatBedrockConverse</code>, 21 tool calls at once</td><td>6,928</td><td>6,930</td></tr>
+    <tr><td><code>ChatBedrockConverse</code>, 40 tool calls at once</td><td>6,934</td><td>2,222 at 22 calls (system prompt only)</td></tr>
+    <tr><td>Your own system cache point + middleware, 40 tool calls at once</td><td>6,928</td><td>2,226 at 11 calls (system prompt only)</td></tr>
   </tbody>
 </table>
 </div>
-<p>Writing to the cache costs 1.25 times the normal input price, and a cache read a tenth of it, so each of those misses costs 12.5 times more than it should for the part written again.</p>
+<p>So either model class works. I'd still use <code>ChatBedrockConverse</code>: <code>ChatBedrock</code> sends the system prompt as plain text with no cache point of its own, so if something does change in the conversation, the system prompt is written again too. A step can still lose the cache if it adds more than about 20 other blocks at once, like 22 or more separate text blocks; <code>cachecanary diff</code> counts positions the way Bedrock does now.</p>
 
 <h3>3. Context editing rewrites the conversation on every call</h3>
 <p><code>ContextEditingMiddleware</code> with <code>ClearToolUsesEdit</code> replaces old tool results with "[cleared]" once the conversation passes a token count (100,000 by default), keeping the newest 3. With its default settings, it does this again on every call without saving it, so each new tool result pushes one more old result out of the newest 3. An earlier part of the history changes on every call, and the cache points that come after it can't find the previous entry. Once it starts, every call writes most of the conversation to the cache again. (Setting <code>clear_at_least</code> stops the rewrites, because the same oldest results get cleared every time, but then it never frees more than that many tokens.)</p>
@@ -191,19 +192,6 @@ middleware = [editing, BedrockPromptCachingMiddleware()]</pre>
 <p class="note">Cost in full-price input tokens: reads count a tenth, writes 1.25.</p>
 <p>So the stock edit, meant to save tokens, cost about 4 times as much per step as not clearing at all, while clearing in batches cost a little less. Clearing in batches rewrote the history on 2 calls out of 31 in my offline run, against every call for the stock edit, and the newest tool results are never cleared. Clearing in batches keeps up to <code>keep + chunk - 1</code> recent results instead of exactly <code>keep</code>, so the model sees a few more. It also works with <code>exclude_tools</code> and <code>clear_tool_inputs</code>.</p>
 
-<h3>4. A cache point of your own turns off LangChain's extra point</h3>
-<p>Older guides tell you to add <code>ChatBedrockConverse.create_cache_point()</code> to the system message. If you keep that and also use the middleware, LangChain skips the point on the message before the newest one, because it only adds it when the request has no cache points of yours. The limit drops from 21 tool calls at once back to 10. On live Bedrock, 11 tool calls at once:</p>
-<div class="scroll">
-<table>
-  <thead><tr><th>Setup</th><th>Read from cache</th><th>Written again</th></tr></thead>
-  <tbody>
-    <tr><td>Middleware only</td><td>6,934</td><td>1,958</td></tr>
-    <tr><td>Your own system cache point + middleware</td><td>2,226 (system prompt only)</td><td>6,666</td></tr>
-  </tbody>
-</table>
-</div>
-<p>The middleware already caches the system prompt, so remove your own cache points when you use it.</p>
-
 <h3>Smaller things</h3>
 <ul>
   <li><code>SummarizationMiddleware</code> replaces old messages with a summary whenever it runs, which rewrites the conversation once each time. On live Bedrock, each call right after a summary read only the system prompt from the cache, and the calls after it read normally again. The gap between its <code>trigger</code> and <code>keep</code> settings decides how often this happens; keep it wide.</li>
@@ -215,7 +203,7 @@ middleware = [editing, BedrockPromptCachingMiddleware()]</pre>
 </ul>
 
 <h3>What LangChain gets right</h3>
-<p>The point on the message before the newest one is what lets <code>ChatBedrockConverse</code> handle 21 tool calls at once. The middleware doesn't save cache points into your conversation history or checkpoints, so restored threads stay clean. Structured output with <code>response_format</code> adds its tool to every call, so it doesn't break the cache. It worked with extended thinking turned on, and a cache point in a tool result's content is moved to where Bedrock accepts it.</p>
+<p>With <code>ChatBedrockConverse</code>, the middleware gives the tools and the system prompt cache points of their own, so a change later in the conversation never costs you those. The middleware doesn't save cache points into your conversation history or checkpoints, so restored threads stay clean. Structured output with <code>response_format</code> adds its tool to every call, so it doesn't break the cache. It worked with extended thinking turned on, and a cache point in a tool result's content is moved to where Bedrock accepts it.</p>
 
 <h2>Check your own agent</h2>
 <p>Save the exact requests your model sends. This works for <code>ChatBedrockConverse</code> and <code>ChatBedrock</code>, streaming or not; I checked each saved file is identical to what reached Bedrock.</p>
@@ -239,19 +227,16 @@ def save_requests(model, folder="langchain-requests"):
 model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-6")
 save_requests(model)</pre>
 <p>Run a conversation, then compare two requests in a row with <code>cachecanary diff</code>. These are real outputs on requests LangChain built:</p>
-<div class="term"><pre><span class="p">$</span> cachecanary diff invoke-turn1.json invoke-turn2.json --model us.anthropic.claude-sonnet-4-6
-lookback-exceeded: 22 blocks were added between the previous checkpoint and the next one. Bedrock only finds an earlier cache entry up to 21 blocks back (21 added still hits, 22 misses), so this call writes the cache again. Add a checkpoint in between (common after many parallel tool calls). (messages[2].content[10])
-
-<span class="p">$</span> cachecanary diff edit-call8.json edit-call9.json --model us.anthropic.claude-sonnet-4-6
+<div class="term"><pre><span class="p">$</span> cachecanary diff edit-call8.json edit-call9.json --model us.anthropic.claude-sonnet-4-6
 history-changed: Earlier conversation history was edited (not just appended). (messages[12].content[0])
 
 <span class="p">$</span> cachecanary diff date-day1.json date-day2.json --model us.anthropic.claude-sonnet-4-6
 system-changed: The system prompt changed inside the cached prefix (look for dates, IDs or per-user text). (system[0])</pre></div>
-<p class="note">In plain words: the first pair is <code>ChatBedrock</code> with 11 tool calls at once (finding 2). The second is the stock context editing clearing one more tool result (finding 3). The third is a date in a dynamic system prompt.</p>
+<p class="note">In plain words: the first pair is the stock context editing clearing one more tool result (finding 3). The second is a date in a dynamic system prompt.</p>
 <p>Keep a few saved requests in your repo and run <code>cachecanary lint</code> on them in CI, and a LangChain upgrade that changes your cache points shows up in a pull request instead of on the bill. Setup is on the <a href="/">home page</a>.</p>
 
 <h2>How I tested this</h2>
-<p>langchain-aws 1.8.1, LangChain 1.4.3 and LangGraph 1.2.14 in a clean Python environment. To capture requests, I pointed LangChain at a small local server standing in for Bedrock that speaks the Converse and InvokeModel formats, streaming or not, so <code>create_agent</code> ran its real agent loop and every request body was saved. The settings cases ran fully live on Bedrock (Claude Sonnet 4.6, us-west-2, October 7 2026). A live model won't call exactly 21 tools on request, so for the agent-loop cases I sent the exact requests LangChain built, in order, to live Bedrock; caching depends only on the request. Every case uses made-up prompts with a fresh random tag, so old cache entries couldn't help. One run read nothing at all from the cache, system prompt included, and four reruns of the same case kept it. That pattern fits cross-Region inference: with a <code>us.</code> model ID, two calls can land in different Regions, and AWS notes this can mean more cache writes. The capture and the live checks are scripts in the repo: <a href="https://github.com/Haarris/cachecanary/blob/main/scripts/capture_langchain_requests.py">capture</a> and <a href="https://github.com/Haarris/cachecanary/blob/main/scripts/live_langchain_checks.py">live checks</a>. Token counts move by a few tokens from run to run because each run uses a new random tag. LangChain changes quickly, so check your own version with the snippet above.</p>
+<p>langchain-aws 1.8.1, LangChain 1.4.3 and LangGraph 1.2.14 in a clean Python environment. To capture requests, I pointed LangChain at a small local server standing in for Bedrock that speaks the Converse and InvokeModel formats, streaming or not, so <code>create_agent</code> ran its real agent loop and every request body was saved. The settings cases ran fully live on Bedrock (Claude Sonnet 4.6, us-west-2, October 7 2026), and I re-ran every case on October 30 2026 after Bedrock changed how it counts tool calls. A live model won't call exactly 21 tools on request, so for the agent-loop cases I sent the exact requests LangChain built, in order, to live Bedrock; caching depends only on the request. Every case uses made-up prompts with a fresh random tag, so old cache entries couldn't help. One run read nothing at all from the cache, system prompt included, and four reruns of the same case kept it. That pattern fits cross-Region inference: with a <code>us.</code> model ID, two calls can land in different Regions, and AWS notes this can mean more cache writes. The capture and the live checks are scripts in the repo: <a href="https://github.com/Haarris/cachecanary/blob/main/scripts/capture_langchain_requests.py">capture</a> and <a href="https://github.com/Haarris/cachecanary/blob/main/scripts/live_langchain_checks.py">live checks</a>. Token counts move by a few tokens from run to run because each run uses a new random tag. LangChain changes quickly, so check your own version with the snippet above.</p>
 <p>Same tests for other frameworks: <a href="/litellm/">LiteLLM</a> and <a href="/strands/">Strands Agents</a>. More on why caching breaks on Bedrock: <a href="https://harisfarooq.substack.com/p/five-ways-claude-prompt-caching-quietly">Five ways Claude prompt caching quietly breaks on Amazon Bedrock</a>.</p>
 <p>Want a quick number for your own app? Paste three totals from CloudWatch into the <a href="/check/">cache checker</a>. It runs in your browser, nothing to install.</p>
 <p>Using CacheCanary? I'd love to hear how it's going, good or bad, and whether you'd want the dashboard. Email me at <a href="mailto:hello@cachecanary.com">hello@cachecanary.com</a>. I read every message.</p>

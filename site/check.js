@@ -178,13 +178,13 @@
   var CAUSES = {
     healthy: ["Keep it that way: check saved requests in CI with <code>cachecanary lint</code>, so a library upgrade can't quietly break it."],
     leaking: [
-      "Agents that run many tools at once: Bedrock only looks back about 20 blocks for the cached part.",
+      "Agents that make many tool calls one after another, or add lots of separate text blocks: Bedrock only looks back about 20 steps for the cached part (tool calls made at the same time count as one).",
       "Calls more than 5 minutes apart, so the cache expires in between.",
       "Something in the cached part changes on some requests, like a date, a user name or the order of your tools."
     ],
     poor: [
       "Something in the cached part changes on most requests, like a date, a request ID or the order of your tools.",
-      "Agents that run many tools at once: Bedrock only looks back about 20 blocks for the cached part.",
+      "Agents that make many tool calls one after another, or add lots of separate text blocks: Bedrock only looks back about 20 steps for the cached part (tool calls made at the same time count as one).",
       "Calls more than 5 minutes apart, so the cache expires in between."
     ],
     "never-read": [

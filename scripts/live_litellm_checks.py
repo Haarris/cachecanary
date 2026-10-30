@@ -25,26 +25,8 @@ import uuid
 MODEL = "bedrock/converse/us.anthropic.claude-sonnet-4-6"
 TOOLS = [{"type": "function", "function": {"name": "lookup_order", "description": "Look up an order.",
           "parameters": {"type": "object", "properties": {"id": {"type": "string"}}}}}]
+# The setup on the page (tests/test_site.py checks they match).
 SYSTEM_AND_LAST = [{"location": "message", "role": "system"}, {"location": "message", "index": -1}]
-
-
-# Same helper as on the page (tests/test_site.py checks they match).
-def cache_points(messages):
-    """Bedrock cache points for this call (Bedrock allows 4)."""
-    # The system prompt and the end of the conversation.
-    points = [{"location": "message", "role": "system"},
-              {"location": "message", "index": -1}]
-    users = [i for i, m in enumerate(messages) if m["role"] == "user"]
-    rounds = [i for i, m in enumerate(messages)
-              if m["role"] == "assistant" and m.get("tool_calls")]
-    # The newest user message.
-    if users:
-        points.append({"location": "message", "index": users[-1]})
-    # The first tool result of the newest round of tool calls.
-    if rounds and (not users or rounds[-1] > users[-1]) \
-            and rounds[-1] + 1 < len(messages):
-        points.append({"location": "message", "index": rounds[-1] + 1})
-    return points
 
 
 def lifetime_check() -> int:
@@ -121,27 +103,27 @@ def main() -> int:
         checks.append((label, call(f"{label}, turn 10", chat + [{"role": "user", "content": "Question 9?"}], points)))
     checks_ok = [checks[0][1]["uncached"] > 5000, checks[1][1]["uncached"] < 20]
 
-    # Finding 2: 4 vs 12 parallel tool calls with points on the system prompt and the last message.
+    # Finding 2: 4 vs 12 parallel tool calls with points on the system prompt and the last message. Since late
+    # Oct 2026 Bedrock counts a group of tool calls (and their results) as one lookback position, so both keep it.
     start = fresh()
-    call("agent start", start, SYSTEM_AND_LAST, TOOLS)
+    first = call("agent start", start, SYSTEM_AND_LAST, TOOLS)
     twelve = call("12 parallel calls", start + tool_round(1, 12), SYSTEM_AND_LAST, TOOLS)
     four = call("4 parallel calls", start + tool_round(1, 4), SYSTEM_AND_LAST, TOOLS)
-    checks_ok += [twelve["read"] < four["read"] / 2, four["write"] < 1000]
+    checks_ok += [twelve["read"] >= first["prompt"] - 5, four["read"] >= first["prompt"] - 5, four["write"] < 1000]
 
-    # The helper through a 7-step session, then a 21-call round.
+    # The page's setup through an agent session with wide rounds: every step reads the whole previous request.
     steps = [fresh()]
     for r, n in ((1, 12), (2, 1), (3, 20)):
         steps.append(steps[-1] + tool_round(r, n))
     steps.append(steps[-1] + [{"role": "assistant", "content": "All checked."}, {"role": "user", "content": "Refund order 3-4."}])
     steps.append(steps[-1] + tool_round(4, 3))
+    steps.append(steps[-1] + tool_round(5, 40))
     previous = None
     for i, messages in enumerate(steps):
-        row = call(f"helper step {i}", messages, cache_points(messages), TOOLS)
+        row = call(f"session step {i}", messages, SYSTEM_AND_LAST, TOOLS)
         if previous is not None:
             checks_ok.append(row["read"] >= previous["prompt"] - 5)  # read almost the whole previous request
         previous = row
-    wide = call("helper, 21 parallel calls", steps[-1] + tool_round(5, 21), cache_points(steps[-1] + tool_round(5, 21)), TOOLS)
-    checks_ok.append(wide["read"] < previous["prompt"] - 5)
 
     # Finding 4: the 1-hour lifetime. The price list is read at import, so each case runs in its own process.
     def lifetime(case, model, extra=None, built_in_prices=False):

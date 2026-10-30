@@ -409,41 +409,204 @@ def test_live_calibration_case_is_not_a_false_error():
     assert "prefix-too-short" in haiku
 
 
-# --- lookback boundary, measured on live Bedrock (scripts/live_lookback_boundary.py) ----------
+# --- lookback boundary, measured on live Bedrock Oct 30 2026 (scripts/live_lookback_positions.py) ----
+# Shapes are lists of (role, [block kinds]); "tu"/"tr"/"text"/"think". Expected hit/miss is what live
+# Bedrock did (Sonnet 4.6, two runs each; most shapes also on InvokeModel and on Sonnet 5.5, one run).
 
-def _lookback_pair(n_calls, with_text=False, b_extra_cp_after=None):
-    """A caches one user turn; B adds an assistant turn with n tool calls and the results.
-    b_extra_cp_after puts an extra checkpoint after that many tool calls in the assistant turn."""
-    a = {"messages": [{"role": "user", "content": [{"text": "start " * 50}, CP]}]}
-    calls = [{"toolUse": {"toolUseId": f"t{i}", "name": "x", "input": {}}} for i in range(n_calls)]
-    if b_extra_cp_after is not None:
-        calls.insert(b_extra_cp_after, CP)
-    results = [{"toolResult": {"toolUseId": f"t{i}", "content": [{"text": "ok"}]}} for i in range(n_calls)]
-    b = {"messages": [{"role": "user", "content": [{"text": "start " * 50}]},
-                      {"role": "assistant", "content": ([{"text": "checking"}] if with_text else []) + calls},
-                      {"role": "user", "content": results + [CP]}]}
-    return normalize(a, "us.anthropic.claude-sonnet-4-6"), normalize(b, "us.anthropic.claude-sonnet-4-6")
+def _render_converse(kind, i):
+    if kind == "text":
+        return {"text": f"note {i}"}
+    if kind == "tu":
+        return {"toolUse": {"toolUseId": f"t{i}", "name": "x", "input": {}}}
+    if kind == "tr":
+        return {"toolResult": {"toolUseId": f"t{i}", "content": [{"text": "ok"}]}}
+    return {"reasoningContent": {"reasoningText": {"text": "thinking", "signature": "sig"}}}
 
 
-@pytest.mark.parametrize("n_calls,with_text,added,miss", [
-    (9, True, 19, False), (10, False, 20, False), (10, True, 21, False),  # live: hit
-    (11, False, 22, True), (11, True, 23, True), (12, False, 24, True),   # live: miss
-])
-def test_lookback_boundary_matches_live_bedrock(n_calls, with_text, added, miss):
-    a, b = _lookback_pair(n_calls, with_text)
-    assert b.checkpoint_indexes[-1] - a.checkpoint_indexes[-1] == added
+def _render_invoke(kind, i):
+    if kind == "text":
+        return {"type": "text", "text": f"note {i}"}
+    if kind == "tu":
+        return {"type": "tool_use", "id": f"toolu_{i}", "name": "x", "input": {}}
+    if kind == "tr":
+        return {"type": "tool_result", "tool_use_id": f"toolu_{i}", "content": "ok"}
+    return {"type": "thinking", "thinking": "thinking", "signature": "sig"}
+
+
+def _lookback_shape_pair(shape, api="converse"):
+    """A caches one user turn; B is the same turn plus `shape`, with a checkpoint on B's last block."""
+    model = "us.anthropic.claude-sonnet-4-6"
+    if api == "converse":
+        a = {"messages": [{"role": "user", "content": [{"text": "start " * 50}, CP]}]}
+        msgs = [{"role": "user", "content": [{"text": "start " * 50}]}]
+        for role, kinds in shape:
+            msgs.append({"role": role, "content": [_render_converse(k, i) for i, k in enumerate(kinds)]})
+        msgs[-1]["content"].append(CP)
+    else:
+        eph = {"type": "ephemeral"}
+        first = {"type": "text", "text": "start " * 50}
+        a = {"anthropic_version": "bedrock-2023-05-31", "messages": [{"role": "user", "content": [{**first, "cache_control": eph}]}]}
+        msgs = [{"role": "user", "content": [first]}]
+        for role, kinds in shape:
+            msgs.append({"role": role, "content": [_render_invoke(k, i) for i, k in enumerate(kinds)]})
+        msgs[-1]["content"][-1]["cache_control"] = eph
+        b = {"anthropic_version": "bedrock-2023-05-31", "messages": msgs}
+        return normalize(a, model), normalize(b, model)
+    return normalize(a, model), normalize({"messages": msgs}, model)
+
+
+def _text(n):
+    return [("assistant", ["text"]), ("user", ["text"] * n)]
+
+
+def _parallel(n, tail=0, lead=0):
+    return [("assistant", ["text"] * lead + ["tu"] * n), ("user", ["tr"] * n + ["text"] * tail)]
+
+
+def _sequential(rounds):
+    return [turn for _ in range(rounds) for turn in (("assistant", ["tu"]), ("user", ["tr"]))]
+
+
+def _mixed(m):
+    return [("assistant", ["text", "tu"] * m), ("user", ["tr"] * m)]
+
+
+LIVE_LOOKBACK = [
+    # name, shape, positions, live result (Sonnet 4.6 Converse, two runs; most also on InvokeModel and Sonnet 5.5)
+    ("20 text blocks", _text(20), 21, "hit"),
+    ("21 text blocks", _text(21), 22, "miss"),
+    ("23 text blocks", _text(23), 24, "miss"),
+    ("10 sequential calls", _sequential(10), 20, "hit"),
+    ("11 sequential calls", _sequential(11), 22, "miss"),
+    ("11 parallel calls", _parallel(11), 3, "hit"),
+    ("40 parallel calls", _parallel(40), 3, "hit"),
+    ("5 parallel + 19 text", _parallel(5, tail=19), 21, "hit"),
+    ("5 parallel + 20 text", _parallel(5, tail=20), 22, "miss"),
+    ("text, 11 parallel, 18 text", _parallel(11, tail=18, lead=1), 21, "hit"),
+    ("text, 11 parallel, 19 text", _parallel(11, tail=19, lead=1), 22, "miss"),
+    ("text before each of 9 calls", _mixed(9), 20, "hit"),
+    ("text before each of 10 calls", _mixed(10), 22, "miss"),   # results run ends on the checkpoint: 2
+    ("18 text, 10 parallel", _parallel(10, lead=18), 21, "hit"),
+    ("19 text, 10 parallel", _parallel(10, lead=19), 22, "miss"),
+    ("18 text, 2 parallel", _parallel(2, lead=18), 21, "hit"),
+    ("19 text, 2 parallel", _parallel(2, lead=19), 22, "miss"),
+    ("thinking, 5 parallel, 19 text", [("assistant", ["think"] + ["tu"] * 5), ("user", ["tr"] * 5 + ["text"] * 19)], 21, "hit"),
+    ("thinking, 5 parallel, 20 text", [("assistant", ["think"] + ["tu"] * 5), ("user", ["tr"] * 5 + ["text"] * 20)], 22, "miss"),
+]
+
+
+@pytest.mark.parametrize("api", ["converse", "invoke"])
+@pytest.mark.parametrize("name,shape,positions,live", LIVE_LOOKBACK, ids=[c[0] for c in LIVE_LOOKBACK])
+def test_lookback_matches_live_bedrock(api, name, shape, positions, live):
+    a, b = _lookback_shape_pair(shape, api)
+    assert diff.lookback_positions(b.blocks, a.checkpoint_indexes[-1], b.checkpoint_indexes[-1]) == positions
     reasons = {r.code: r for r in diff.explain(a, b)}
-    assert ("lookback-exceeded" in reasons) is miss
-    if miss:
-        assert reasons["lookback-exceeded"].message.startswith(f"{added} blocks were added")
+    assert ("lookback-exceeded" in reasons) is (live == "miss")
+    if live == "miss":
+        assert reasons["lookback-exceeded"].message.startswith(f"{positions} lookback positions were added")
+
+
+def test_lookback_message_names_blocks_and_the_counting_rule():
+    a, b = _lookback_shape_pair(_sequential(11))
+    msg = {r.code: r for r in diff.explain(a, b)}["lookback-exceeded"].message
+    assert "(22 blocks)" in msg and "21 added still hits, 22 misses" in msg
+    assert "thinking blocks don't count" in msg and "parallel tool calls" not in msg
 
 
 def test_extra_checkpoint_within_reach_avoids_the_miss():
-    a, b = _lookback_pair(15, b_extra_cp_after=5)  # a Converse cachePoint marks the block before it: 5 after A's
+    # 30 text blocks would be 31 positions; a checkpoint after the 10th is 11 positions from A's.
+    shape = [("assistant", ["text"]), ("user", ["text"] * 30)]
+    a, b = _lookback_shape_pair(shape)
+    raw = {"messages": [{"role": "user", "content": [{"text": "start " * 50}]}, {"role": "assistant", "content": [{"text": "note 0"}]},
+                        {"role": "user", "content": [{"text": f"note {i}"} for i in range(10)] + [CP]
+                         + [{"text": f"note {i}"} for i in range(10, 30)] + [CP]}]}
+    b = normalize(raw, "us.anthropic.claude-sonnet-4-6")
     assert "lookback-exceeded" not in {r.code for r in diff.explain(a, b)}
 
 
 def test_extra_checkpoint_out_of_reach_does_not_help():
-    a, b = _lookback_pair(30, b_extra_cp_after=25)  # extra point 25 blocks after A's: also too far
+    a, _ = _lookback_shape_pair(_text(1))
+    raw = {"messages": [{"role": "user", "content": [{"text": "start " * 50}]}, {"role": "assistant", "content": [{"text": "note 0"}]},
+                        {"role": "user", "content": [{"text": f"note {i}"} for i in range(24)] + [CP]
+                         + [{"text": f"note {i}"} for i in range(24, 30)] + [CP]}]}
+    b = normalize(raw, "us.anthropic.claude-sonnet-4-6")
     reasons = {r.code: r for r in diff.explain(a, b)}
-    assert reasons["lookback-exceeded"].message.startswith("25 blocks were added")
+    assert reasons["lookback-exceeded"].message.startswith("25 lookback positions were added")
+
+
+def _positions(messages, model="us.anthropic.claude-sonnet-4-6"):
+    blocks = normalize({"messages": messages}, model).blocks
+    cps = [i for i, b in enumerate(blocks) if b.checkpoint]
+    return diff.lookback_positions(blocks, cps[0], cps[-1])
+
+
+def test_tool_runs_split_by_text_inside_one_message():
+    # tu run (1) + text (1) + tu (1) + tr run (1) + text checkpoint (1)
+    assert _positions([
+        {"role": "user", "content": [{"text": "x"}, CP]},
+        {"role": "assistant", "content": [_render_converse("tu", 0), _render_converse("tu", 1), {"text": "more"}, _render_converse("tu", 2)]},
+        {"role": "user", "content": [_render_converse("tr", 0), _render_converse("tr", 1), _render_converse("tr", 2), {"text": "end"}, CP]},
+    ]) == 5
+
+
+def test_tool_result_runs_do_not_merge_across_messages():
+    # [tr, tr] then [tr, tr + checkpoint]: run (1) + rest of the second run (1) + checkpoint (1) = 3, not 2
+    assert _positions([
+        {"role": "user", "content": [{"text": "x"}, CP]},
+        {"role": "user", "content": [_render_converse("tr", 0), _render_converse("tr", 1)]},
+        {"role": "user", "content": [_render_converse("tr", 2), _render_converse("tr", 3), CP]},
+    ]) == 3
+
+
+def test_lookback_edge_cases_follow_the_rule():
+    tu, tr, think = (lambda i: _render_converse("tu", i)), (lambda i: _render_converse("tr", i)), _render_converse("think", 0)
+    start = {"role": "user", "content": [{"text": "x"}, CP]}
+    # A checkpoint ending a tool-use run counts on its own, like one ending a tool-result run.
+    assert _positions([start, {"role": "assistant", "content": [tu(0), tu(1), tu(2), CP]}]) == 2
+    # A checkpoint on a thinking block still counts as its position.
+    assert _positions([start, {"role": "assistant", "content": [{"text": "a"}, think, CP]}]) == 2
+    # Thinking between two tool calls doesn't break their run (not measured live; thinking is skipped).
+    assert _positions([start, {"role": "assistant", "content": [tu(0), think, tu(1)]},
+                       {"role": "user", "content": [tr(0), tr(1), {"text": "end"}, CP]}]) == 3
+    # The previous checkpoint inside a run: the rest of that run starts a new position.
+    blocks = normalize({"messages": [{"role": "user", "content": [tr(0), CP, tr(1), tr(2), {"text": "e"}, CP]}]},
+                       "us.anthropic.claude-sonnet-4-6").blocks
+    assert diff.lookback_positions(blocks, 0, len(blocks) - 1) == 2
+    # Nothing added.
+    assert diff.lookback_positions(blocks, 0, 0) == 0
+    # InvokeModel: cache_control inside the last tool_result's content makes it the checkpoint; a run of 2 ends there.
+    inv = normalize({"anthropic_version": "bedrock-2023-05-31", "messages": [
+        {"role": "user", "content": [{"type": "text", "text": "x", "cache_control": {"type": "ephemeral"}}]},
+        {"role": "assistant", "content": [_render_invoke("tu", 0), _render_invoke("tu", 1)]},
+        {"role": "user", "content": [_render_invoke("tr", 0),
+                                     {"type": "tool_result", "tool_use_id": "toolu_1",
+                                      "content": [{"type": "text", "text": "ok", "cache_control": {"type": "ephemeral"}}]}]}]},
+        "us.anthropic.claude-sonnet-4-6")
+    assert inv.blocks[-1].checkpoint and inv.blocks[-1].kind == "tool_result"
+    assert diff.lookback_positions(inv.blocks, 0, len(inv.blocks) - 1) == 3
+
+
+@pytest.mark.parametrize("fixture", ["strands/agent-turn1.json strands/agent-turn2.json",
+                                     "litellm/agent-turn1.json litellm/agent-turn2.json",
+                                     "langchain/invoke-turn1.json langchain/invoke-turn2.json"])
+def test_real_framework_wide_steps_no_longer_exceed_the_lookback(fixture):
+    """Requests Strands, LiteLLM and LangChain really built for 11-12 parallel tool calls; these lost the cache
+    on Oct 7 2026 and kept it on live Bedrock on Oct 30."""
+    import pathlib
+    root = pathlib.Path(__file__).parent / "fixtures"
+    a_path, b_path = fixture.split()
+    a = normalize(json.loads((root / a_path).read_text()), "us.anthropic.claude-sonnet-4-6")
+    b = normalize(json.loads((root / b_path).read_text()), "us.anthropic.claude-sonnet-4-6")
+    assert "lookback-exceeded" not in {r.code for r in diff.explain(a, b)}
+
+
+def test_block_kinds_are_tagged_for_both_apis():
+    conv = normalize({"messages": [{"role": "assistant", "content": [_render_converse(k, 0) for k in ("think", "text", "tu")]},
+                                   {"role": "user", "content": [_render_converse("tr", 0)]}]})
+    assert [b.kind for b in conv.blocks] == ["reasoning", "other", "tool_use", "tool_result"]
+    assert [b.message for b in conv.blocks] == [0, 0, 0, 1]
+    inv = normalize({"anthropic_version": "bedrock-2023-05-31", "messages": [
+        {"role": "assistant", "content": [_render_invoke("think", 0), {"type": "redacted_thinking", "data": "x"}, _render_invoke("tu", 0)]},
+        {"role": "user", "content": [_render_invoke("tr", 0), _render_invoke("text", 1)]}]})
+    assert [b.kind for b in inv.blocks] == ["reasoning", "reasoning", "tool_use", "tool_result", "other"]
+    assert normalize({"system": [{"text": "s"}]}).blocks[0].kind == "other"

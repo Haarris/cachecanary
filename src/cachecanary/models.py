@@ -46,12 +46,14 @@ CLAUDE_LIMITS: dict[str, CacheLimits] = {
     "claude-3-5-haiku": CacheLimits(2048, 4, None, legacy=True),
 }
 
-# Bedrock's automatic prefix check only looks back ~20 content blocks from a checkpoint.
-LOOKBACK_BLOCKS = 20
-# Measured on live Bedrock (Oct 2026, Sonnet 4.6, scripts/live_lookback_boundary.py, two runs per size):
-# a checkpoint still finds an earlier cache entry when at most 21 blocks were added after it (20 in
-# between plus the checkpoint's own block); 22 or more always missed. pydantic-ai#9404 saw the same.
-MAX_BLOCKS_ADDED = LOOKBACK_BLOCKS + 1
+# How far back a checkpoint finds an earlier cache entry, in lookback positions (see
+# diff.lookback_positions for how blocks turn into positions). Measured on live Bedrock, us-west-2,
+# Oct 30 2026 (scripts/live_lookback_positions.py): Sonnet 4.6 two runs per shape (Converse and
+# InvokeModel, plus real thinking turns), Sonnet 5.5 one run (no thinking shape). 21 positions added
+# still hit, 22 always missed. On Oct 7 2026 Bedrock still counted every block, so many parallel tool
+# calls lost the cache; by Oct 28 it counted a run of tool calls (or tool results) once, as Anthropic's
+# own API documents: https://platform.claude.com/docs/en/build-with-claude/prompt-caching
+MAX_LOOKBACK_POSITIONS = 21
 
 
 def lookup(model_id: str | None) -> tuple[str | None, CacheLimits | None]:

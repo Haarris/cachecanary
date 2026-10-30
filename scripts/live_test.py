@@ -61,28 +61,32 @@ def with_tools(req: dict, tools: list) -> dict:
 
 
 def tool_history(system_text: str, first_turn_text: str, n_calls: int, intermediate_cp: bool) -> tuple[dict, dict]:
-    """Reproduces the 'rolling checkpoint' pattern from pydantic-ai #9404.
+    """Reproduces the 'rolling checkpoint' pattern from pydantic-ai #9404, in the shape that still
+    breaks it on Bedrock.
 
     Request A: system (checkpoint) + a long first user turn with a checkpoint at its end.
-    Request B: the same history WITHOUT the old turn checkpoint (it rolls to the end), plus one
-    assistant turn with n parallel tool calls and their results. 2n new blocks sit between A's
-    conversation checkpoint and B's, so with n=12 Bedrock's ~20-block lookback cannot reach A's
-    entry and only the system cache is read. intermediate_cp adds a checkpoint after the assistant
-    turn (within 20 blocks of A's), which should recover the conversation cache.
+    Request B: the same history WITHOUT the old turn checkpoint (it rolls to the end), plus n rounds of
+    one tool call and its result. Each call and each result is one lookback position, so with n=11
+    (22 positions) Bedrock cannot reach A's entry and only the system cache is read. (Parallel calls no
+    longer break it: by Oct 28 2026 a group of calls side by side counts as one position.)
+    intermediate_cp adds a checkpoint after the fifth result (within reach of A's), which should
+    recover the conversation cache.
     """
     cp = {"cachePoint": {"type": "default"}}
     system = [{"text": system_text}, cp]
     a = with_tools({"system": system,
                     "messages": [{"role": "user", "content": [{"text": first_turn_text}, cp]}],
                     "inferenceConfig": {"maxTokens": 5}}, [TOOL_A])
-    calls = [{"toolUse": {"toolUseId": f"tu{i}", "name": "lookup_order", "input": {"id": str(i)}}} for i in range(n_calls)]
-    results = [{"toolResult": {"toolUseId": f"tu{i}", "content": [{"text": f"order {i}: shipped"}]}} for i in range(n_calls)]
     b = copy.deepcopy(a)
-    b["messages"] = [
-        {"role": "user", "content": [{"text": first_turn_text}]},
-        {"role": "assistant", "content": calls + ([cp] if intermediate_cp else [])},
-        {"role": "user", "content": results + [cp]},
-    ]
+    msgs = [{"role": "user", "content": [{"text": first_turn_text}]}]
+    for i in range(n_calls):
+        msgs.append({"role": "assistant", "content": [
+            {"toolUse": {"toolUseId": f"tu{i}", "name": "lookup_order", "input": {"id": str(i)}}}]})
+        msgs.append({"role": "user", "content": [
+            {"toolResult": {"toolUseId": f"tu{i}", "content": [{"text": f"order {i}: shipped"}]}}]
+            + ([cp] if intermediate_cp and i == 4 else [])})
+    msgs[-1]["content"].append(cp)
+    b["messages"] = msgs
     return a, b
 
 
@@ -163,14 +167,14 @@ def run(args) -> int:
     except Exception as exc:
         record("model switched", "miss", False, f"ERROR {probe._translate(exc)}")
 
-    # 4. 20-block lookback: 12 parallel tool calls = 24 new blocks between conversation checkpoints.
+    # 4. Lookback: 11 rounds of one tool call = 22 new positions between conversation checkpoints.
     #    Both variants still read the SYSTEM cache, so judge by how many tokens were read: without a
     #    middle checkpoint the long first turn (~1.5k tokens) must NOT come from cache; with one it must.
     reads = {}
     for variant, mid in (("no middle checkpoint", False), ("middle checkpoint", True)):
         sys_text = policy(220, salt + ("k" if not mid else "l"))
         turn = "Background for this ticket: " + policy(130, salt + ("m" if not mid else "n"))
-        a, b2 = tool_history(sys_text, turn, 12, intermediate_cp=mid)
+        a, b2 = tool_history(sys_text, turn, 11, intermediate_cp=mid)
         try:
             call(client, a, SONNET)
             time.sleep(args.pause)
@@ -183,7 +187,7 @@ def run(args) -> int:
     if "no middle checkpoint" in reads and "middle checkpoint" in reads:
         no_mid, mid = reads["no middle checkpoint"], reads["middle checkpoint"]
         recovered = mid - no_mid > 1000  # the first turn is ~1.5k tokens
-        record("lookback >20 blocks (rolling checkpoint)", "partial miss",
+        record("lookback >21 positions (rolling checkpoint)", "partial miss",
                recovered and "lookback-exceeded" in reads["no middle checkpoint diff"],
                f"read without middle cp={no_mid}, with middle cp={mid}",
                f"diff(no mid)={reads['no middle checkpoint diff']} diff(mid)={reads['middle checkpoint diff']}")
@@ -197,7 +201,7 @@ def run(args) -> int:
         json.dump({"region": args.region, "run": salt, "results": results}, fh, indent=2)
     failed = [r for r in rows if r[2] != "PASS"]
     print(f"\n{len(rows) - len(failed)}/{len(rows)} scenarios matched expectations. Raw data: live_results.json")
-    print("Note: on 'lookback >20 blocks' the 2nd call may still hit the SYSTEM cache (read>0) while missing the "
+    print("Note: on 'lookback >21 positions' the 2nd call may still hit the SYSTEM cache (read>0) while missing the "
           "conversation cache; compare read tokens with the 'middle checkpoint' row to see the difference.")
     return 0 if not failed else 1
 
