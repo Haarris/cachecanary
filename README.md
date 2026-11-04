@@ -58,7 +58,7 @@ The last one is easy to miss. The same prompt caches fine on Sonnet 4.6 (minimum
 | `lint request.json [--model ID]` | Checks one request for things that stop caching | it finds an error |
 | `diff previous.json next.json` | Explains why the second request missed the first one's cache | the cached part changed |
 | `probe request.json --model ID [--region R] [--stream]` | Sends the request twice and checks the second one read from cache | nothing was read from cache |
-| `logs files-or-folders... [--by model\|principal] [--min-hit 0.5] [--price 3]` | Hit rate and input cost per model or IAM principal from Bedrock invocation logs, plus how much the misses cost | a group is under the threshold |
+| `logs files-or-folders... [--by model\|principal] [--min-hit 0.5] [--price 3] [--ttl-check]` | Hit rate and input cost per model or IAM principal from Bedrock invocation logs, plus how much the misses cost. `--ttl-check` adds why calls had to write the cache again, and what those writes cost at the read and 1-hour write prices | a group is under the threshold |
 | `langfuse [--since 7d] [--environment E] [--by model\|name\|environment] [--min-hit 0.5] [--price 3]` | The same, from the generations your Langfuse project already records (no invocation logging needed) | a group is under the threshold |
 
 Exit code 2 means it couldn't run at all (bad file, no model access, no AWS credentials). `--json` and `--github` go before the command.
@@ -137,6 +137,37 @@ How the dollars work:
 
 It reads S3 deliveries, CloudWatch exports and `aws logs filter-log-events` output, gzipped or not, including streamed responses. Bedrock logs InvokeModel calls under an inference profile ARN and Converse calls under the short model ID, so CacheCanary merges the two.
 
+### Why calls had to write the cache again (`--ttl-check`)
+
+A low hit rate has different causes, and they have different fixes. If the cache expires between calls, the 1-hour cache helps. If something else is the cause, the 1-hour cache only makes every cache write cost more (2x the input price instead of 1.25x, on the Bedrock price list). `--ttl-check` looks at every call that read nothing from the cache but wrote to it, finds the previous call that started the same way (same model, same system prompt and tools), and tells you how long before it came:
+
+```text
+$ cachecanary logs tests/fixtures/bedrock_invocation_logs_ttl_2026-11.json --ttl-check
+us.anthropic.claude-sonnet-4-5-20250929-v1:0: hit 62% over 8 calls (read 105702, write 63422, uncached 104, unparsed 0)
+  input cost $0.35 at list price; about $0.22 of it lost to cache misses (target: 90% hit rate)
+List prices: Amazon Bedrock on-demand, Oct 2026 (global. IDs at list, others +10%). Use --price for your own rate.
+
+Cache re-writes (calls that read nothing from the cache but wrote to it):
+us.anthropic.claude-sonnet-4-5-20250929-v1:0: 3 re-write(s) in 8 calls, 63422 tokens written by them
+       2  no earlier call that started the same way read or wrote the cache in these logs (42281 tokens)
+       1  5 to 60 minutes after the previous call that started the same way (21141 tokens)
+  The 5-to-60-minute re-writes cost $0.09 as cache writes; the same tokens would cost under $0.01 as cache reads
+  All cache writes here cost $0.31; the same tokens at the 1-hour write price would cost $0.42
+```
+
+That example comes from a live test on November 4 2026 (Claude Sonnet 4.5, us-west-2): two agents with the same size of system prompt (21,000 tokens), one on the 5-minute cache and one on the 1-hour cache, each called at 0, 2, 7 and 20 minutes. The token counts are what Bedrock returned ([the raw run](https://github.com/Haarris/cachecanary/blob/main/tests/fixtures/live_ttl_check_2026-11-04.jsonl), made by `scripts/live_ttl_check.py`); `scripts/build_ttl_fixture.py` turns it into log records with the prompts redacted and timestamps that follow the test schedule. The 5-minute agent was still read at minute 7 (every cache hit restarts the 5 minutes), then had to write everything again at minute 20. The 1-hour agent was read at minute 20.
+
+How to read it:
+
+- **5 to 60 minutes**: the cache had probably expired between calls. This is what the 1-hour cache is for. The two dollar lines are prices of what the logs show, not a forecast: what those re-writes cost and what the same tokens would cost as reads, and what all your cache writes cost and what they would cost at the 1-hour write price. If the first line's difference (writes minus reads) is much bigger than the second line's (the 1-hour price minus today's), and the re-written tokens are the shared start of the prompt (check two requests with `diff`), the 1-hour cache is worth a try.
+- **Within 5 minutes**: the cache should not have expired yet. AWS says a cache entry is stored on the server that processed the request, and requests "served by a different server, such as one in another Region, or that are sent before an identical request has started its response, write a new entry". Other causes are a change later in the request with no cache point right after the system prompt and tools, or Bedrock's lookback limit. The 1-hour cache won't fix any of these. A different region is shown when the logs record it; run `diff` on two saved requests to rule out a prompt change.
+- **Less than 1 second apart**: usually parallel requests sent before the first one was cached.
+- **Latest write all on the 1-hour cache**: the cache write before this call went entirely to the 1-hour cache and this one still missed within the hour, so the lifetime wasn't the problem.
+
+Calls that read from the cache and also wrote aren't classified. In the logs, new text at the end of the prompt (the next turn of an agent loop) looks the same as one conversation's own history expiring while other conversations keep a shared system prompt cached.
+
+Matching by system prompt and tools needs the request body in the log record. Bedrock includes it when text data delivery is on and the body is 100 KB or less; bigger bodies (and binary data) go to separate S3 objects, for CloudWatch delivery only when an S3 location for large data is set. Calls without one, or without a system prompt or tools, are matched to the previous call from the same IAM caller and model instead, and the output says so. A call that never read or wrote the cache doesn't count as the previous call. With `--ttl-check`, `--json` output becomes `{"groups", "notes", "ttl_check", "ttl_check_skipped"}`; the GitHub summary doesn't include it yet.
+
 ## Hit rates from Langfuse
 
 If you trace your agents with [Langfuse](https://langfuse.com), you don't need invocation logging (more detail in the [Langfuse guide](https://cachecanary.com/langfuse/)). Langfuse already stores the cache counts for every model call, and `langfuse` reads them through the Langfuse API:
@@ -166,7 +197,7 @@ Only model calls (generations) are counted. Agent and chain spans can carry the 
 
 ## How it's tested
 
-The checks follow AWS's documented prompt-caching rules. The core behaviour was verified against live Amazon Bedrock: Converse and InvokeModel, streaming, both cache lifetimes (5 minutes and 1 hour), model minimums, prompt changes and the exact lookback limit (21 positions hit, 22 miss, re-measured October 30 2026 on Sonnet 4.6 and 5.5 after Bedrock changed how it counts tool calls). Every check added in 0.3 was measured live first, and `scripts/live_v03_checks.py` re-runs those cases against Bedrock and compares CacheCanary's verdict with what Bedrock did (15 of 15 agreed in October 2026). Every check also has unit tests. The log reader is tested against real Bedrock invocation logs (redacted copies are in [tests/fixtures](https://github.com/Haarris/cachecanary/tree/main/tests/fixtures)). The Langfuse reader is tested against records that Strands, LiteLLM and LangChain wrote into a real Langfuse 4.64 server, and against a production Langfuse Cloud project, where its numbers matched a separate recount for every model.
+The checks follow AWS's documented prompt-caching rules. The core behaviour was verified against live Amazon Bedrock: Converse and InvokeModel, streaming, both cache lifetimes (5 minutes and 1 hour), model minimums, prompt changes and the exact lookback limit (21 positions hit, 22 miss, re-measured October 30 2026 on Sonnet 4.6 and 5.5 after Bedrock changed how it counts tool calls). Every check added in 0.3 was measured live first, and `scripts/live_v03_checks.py` re-runs those cases against Bedrock and compares CacheCanary's verdict with what Bedrock did (15 of 15 agreed in October 2026). Every check also has unit tests. The log reader is tested against real Bedrock invocation logs (redacted copies are in [tests/fixtures](https://github.com/Haarris/cachecanary/tree/main/tests/fixtures)), and `--ttl-check` against real logs with request bodies from Converse, ConverseStream and InvokeModel calls, including one stored in S3 (eu-west-1, November 2026). The Langfuse reader is tested against records that Strands, LiteLLM and LangChain wrote into a real Langfuse 4.64 server, and against a production Langfuse Cloud project, where its numbers matched a separate recount for every model.
 
 To run the live checks yourself, use an AWS Region without production traffic: `python scripts/live_test.py --region <region>`.
 
@@ -180,6 +211,7 @@ Everything runs on your machine or CI runner. Nothing is sent anywhere. `probe` 
 - Bedrock keeps cache counts inside the logged response body, and only bodies up to 100 KB are stored inline. Bigger ones show up as `unparsed` and aren't in the dollar figures.
 - `langfuse` can only check a call's counts when the integration sent a total. Calls with no cache fields at all are counted as uncached and listed in the output, because Langfuse can't tell "caching was off" from "the integration doesn't report cache tokens".
 - Dollar figures use list prices, which change. Batch, provisioned throughput and priority tiers aren't covered; use `--price` for those.
+- `--ttl-check` matches calls by system prompt and tools only when the request body is in the log record. The same prompt sent through Converse and InvokeModel, or as a plain string versus a list of blocks, is written differently in the logs, so it counts as two different starts. The served region (`inferenceRegion`) isn't in AWS's documented log format, though real records include it; without it, re-writes within 5 minutes show "region not in the logs".
 - Bedrock only for now.
 
 ## What's next

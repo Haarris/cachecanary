@@ -1,0 +1,8 @@
+{"ttl": "5m", "call": 0, "minute": 0, "latency_ms": 6865, "read": 0, "write": 21141, "uncached": 13, "cache_creation": {"ephemeral_5m_input_tokens": 21141, "ephemeral_1h_input_tokens": 0}}
+{"ttl": "1h", "call": 0, "minute": 0, "latency_ms": 7745, "read": 0, "write": 21140, "uncached": 13, "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 21140}}
+{"ttl": "5m", "call": 1, "minute": 2, "latency_ms": 3695, "read": 21141, "write": 0, "uncached": 13, "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0}}
+{"ttl": "1h", "call": 1, "minute": 2, "latency_ms": 4740, "read": 21140, "write": 0, "uncached": 13, "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0}}
+{"ttl": "5m", "call": 2, "minute": 7, "latency_ms": 4947, "read": 21141, "write": 0, "uncached": 13, "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0}}
+{"ttl": "1h", "call": 2, "minute": 7, "latency_ms": 5493, "read": 21140, "write": 0, "uncached": 13, "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0}}
+{"ttl": "5m", "call": 3, "minute": 20, "latency_ms": 4106, "read": 0, "write": 21141, "uncached": 13, "cache_creation": {"ephemeral_5m_input_tokens": 21141, "ephemeral_1h_input_tokens": 0}}
+{"ttl": "1h", "call": 3, "minute": 20, "latency_ms": 6608, "read": 21140, "write": 0, "uncached": 13, "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0}}

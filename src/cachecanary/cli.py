@@ -3,7 +3,7 @@
   cachecanary lint request.json [--model ID]
   cachecanary diff previous.json next.json [--model ID]
   cachecanary probe request.json --model ID [--region R] [--stream]
-  cachecanary logs FILE_OR_FOLDER ... [--by model|principal|model+principal] [--min-hit 0.5] [--price 3]
+  cachecanary logs FILE_OR_FOLDER ... [--by model|principal|model+principal] [--min-hit 0.5] [--price 3] [--ttl-check]
   cachecanary langfuse [--since 7d | --from DATE --to DATE] [--environment E] [--by model|name|environment]
 
 Exit codes: 0 ok, 1 caching problem found (use to gate CI), 2 could not run (bad input, AWS error).
@@ -18,7 +18,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from cachecanary import __version__, diff, langfuse, lint, logs, pricing, probe
+from cachecanary import __version__, diff, langfuse, lint, logs, pricing, probe, ttl
 from cachecanary import github as gh
 from cachecanary.request import RequestError, normalize
 
@@ -167,10 +167,65 @@ def cmd_logs(args) -> int:
                 raise InputError(f"could not read {path}: {exc}") from exc
     groups = logs.aggregate(records, by=args.by)
     notes = [f"Skipped {stats.bad_lines} unreadable line(s)."] if stats.bad_lines else []
-    return _report(groups, args, "logs", "No invocation log records found.", notes)
+    extra = _ttl_check(records, args.price) if args.ttl_check else None
+    return _report(groups, args, "logs", "No invocation log records found.", notes, extra)
 
 
-def _report(groups, args, source: str, empty: str, notes: list[str]) -> int:
+def _ttl_check(records, custom_price) -> tuple[list[str], dict]:
+    """Text lines and JSON for `logs --ttl-check`."""
+    calls, skipped = ttl.collect(records)
+    groups = ttl.check(calls, custom_price)
+    lines, data = ["", "Cache re-writes (calls that read nothing from the cache but wrote to it):"], {}
+    for model, g in sorted(groups.items(), key=lambda kv: -sum(kv[1].rewrite_tokens.values())):
+        total = sum(g.rewrites.values())
+        money = g.priced
+        show_1h = money and g.supports_1h is True
+        data[model] = {"calls": g.calls, "calls_body_in_s3": g.calls_body_in_s3, "calls_no_body": g.calls_no_body,
+                       "rewrites": g.rewrites, "rewrite_tokens": g.rewrite_tokens,
+                       "rewrites_within_1_second": g.same_second,
+                       "cache_write_tokens": g.write_tokens, "cache_write_tokens_1h": g.write_tokens_1h,
+                       "rewrites_5_to_60m_cost_usd": round(g.cost_5to60_now, 6) if money else None,
+                       "rewrites_5_to_60m_as_reads_usd": round(g.cost_5to60_as_reads, 6) if money else None,
+                       "cache_writes_cost_usd": round(g.cost_writes_now, 6) if money else None,
+                       "cache_writes_at_1h_rate_usd": round(g.cost_writes_at_1h, 6) if show_1h else None}
+        lines.append(f"{model}: {total} re-write(s) in {g.calls} calls, "
+                     f"{sum(g.rewrite_tokens.values())} tokens written by them")
+        for row in ttl.ROWS:
+            if g.rewrites.get(row):
+                lines.append(f"  {g.rewrites[row]:>6}  {ttl.LABELS[row]} ({g.rewrite_tokens[row]} tokens)")
+        if g.same_second:
+            lines.append(f"  {g.same_second} of these came less than 1 second after the previous call "
+                         f"(likely sent before that call's response had started)")
+        missing = g.calls_body_in_s3 + g.calls_no_body
+        if missing:
+            why = []
+            if g.calls_no_body:
+                why.append(f"{g.calls_no_body} with no body logged")
+            if g.calls_body_in_s3:
+                why.append(f"{g.calls_body_in_s3} with the body stored as a separate S3 object (over 100 KB, or binary)")
+            lines.append(f"  {missing} of {g.calls} call(s) have no request body in the record ({', '.join(why)}); "
+                         f"they are matched by caller and model, which can mix different prompts")
+        if not money:
+            lines.append("  no price for this model; add --price to see dollars")
+            continue
+        if g.rewrites.get(ttl.FIVE_TO_60M) or g.rewrites.get(f"{ttl.FIVE_TO_60M}/caller"):
+            lines.append(f"  The 5-to-60-minute re-writes cost {_money(g.cost_5to60_now)} as cache writes; "
+                         f"the same tokens would cost {_money(g.cost_5to60_as_reads)} as cache reads")
+        if show_1h:
+            lines.append(f"  All cache writes here cost {_money(g.cost_writes_now)}; the same tokens at the "
+                         f"1-hour write price would cost {_money(g.cost_writes_at_1h)}")
+        elif ttl.lookup(model)[1] is None:
+            lines.append("  CacheCanary has no 1-hour cache information for this model")
+        else:
+            lines.append("  The 1-hour cache is not documented for this model on Bedrock")
+    if not groups:
+        lines = ["", "Cache re-writes: no calls with usage and a timestamp."]
+    if skipped:
+        lines.append(f"Left out of the re-write check: {skipped} record(s) with no usage or no timestamp.")
+    return lines, {"ttl_check": data, "ttl_check_skipped": skipped}
+
+
+def _report(groups, args, source: str, empty: str, notes: list[str], extra=None) -> int:
     """Hit rate and dollars per group, shared by `logs` and `langfuse`."""
     target = args.min_hit if args.min_hit is not None else DEFAULT_TARGET_HIT
     data, lines, failing = {}, [], False
@@ -213,9 +268,12 @@ def _report(groups, args, source: str, empty: str, notes: list[str]) -> int:
                      "Use --price for your own rate.")
     lines.extend(notes)
     if args.json:
-        print(json.dumps({"groups": data, "notes": notes} if source == "langfuse" else data, indent=2))
+        if extra is not None:
+            print(json.dumps({"groups": data, "notes": notes, **extra[1]}, indent=2))
+        else:
+            print(json.dumps({"groups": data, "notes": notes} if source == "langfuse" else data, indent=2))
     else:
-        print("\n".join(lines if data else [empty, *notes]))
+        print("\n".join((lines if data else [empty, *notes]) + (extra[0] if extra is not None and data else [])))
     if args.github:
         rows = []
         for key, d in data.items():
@@ -353,6 +411,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--min-hit", type=_unit, help="fail if any group's hit ratio is below this (0-1); "
                    "also the target for the dollars lost figure (default 0.9)")
     p.add_argument("--price", type=_price, help="your input price in USD per million tokens, instead of list prices")
+    p.add_argument("--ttl-check", action="store_true",
+                   help="also show why calls had to write the cache again (time since the previous call that "
+                        "started the same way, region), and what the logged cache writes cost at the read and "
+                        "1-hour write prices")
     p.set_defaults(func=cmd_logs)
 
     p = sub.add_parser("langfuse", help="cache hit rates from the generations in a Langfuse project",

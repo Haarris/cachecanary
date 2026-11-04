@@ -1,0 +1,526 @@
+[
+ {
+  "schemaType": "ModelInvocationLog",
+  "schemaVersion": "1.0",
+  "timestamp": "2026-11-04T16:03:11Z",
+  "accountId": "111122223333",
+  "region": "us-west-2",
+  "requestId": "00000000-0000-0000-0000-000000000000",
+  "operation": "InvokeModel",
+  "modelId": "arn:aws:bedrock:us-west-2:111122223333:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "identity": {
+   "arn": "arn:aws:sts::111122223333:assumed-role/ExampleRole/agent-1h"
+  },
+  "input": {
+   "inputContentType": "application/json",
+   "inputTokenCount": 13,
+   "inputBodyJson": {
+    "anthropic_version": "bedrock-2023-05-31",
+    "max_tokens": 20,
+    "system": [
+     {
+      "type": "text",
+      "cache_control": {
+       "type": "ephemeral",
+       "ttl": "1h"
+      },
+      "text": "[1h agent: 21,000-token system prompt, redacted]"
+     }
+    ],
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "Task 0: reply OK."
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "output": {
+   "outputContentType": "application/json",
+   "outputTokenCount": 2,
+   "outputBodyJson": {
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "OK"
+     }
+    ],
+    "usage": {
+     "input_tokens": 13,
+     "cache_read_input_tokens": 0,
+     "cache_creation_input_tokens": 21140,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 21140
+     },
+     "output_tokens": 2
+    }
+   }
+  }
+ },
+ {
+  "schemaType": "ModelInvocationLog",
+  "schemaVersion": "1.0",
+  "timestamp": "2026-11-04T16:03:10Z",
+  "accountId": "111122223333",
+  "region": "us-west-2",
+  "requestId": "00000000-0000-0000-0000-000000000001",
+  "operation": "InvokeModel",
+  "modelId": "arn:aws:bedrock:us-west-2:111122223333:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "identity": {
+   "arn": "arn:aws:sts::111122223333:assumed-role/ExampleRole/agent-5m"
+  },
+  "input": {
+   "inputContentType": "application/json",
+   "inputTokenCount": 13,
+   "inputBodyJson": {
+    "anthropic_version": "bedrock-2023-05-31",
+    "max_tokens": 20,
+    "system": [
+     {
+      "type": "text",
+      "cache_control": {
+       "type": "ephemeral"
+      },
+      "text": "[5m agent: 21,000-token system prompt, redacted]"
+     }
+    ],
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "Task 0: reply OK."
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "output": {
+   "outputContentType": "application/json",
+   "outputTokenCount": 2,
+   "outputBodyJson": {
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "OK"
+     }
+    ],
+    "usage": {
+     "input_tokens": 13,
+     "cache_read_input_tokens": 0,
+     "cache_creation_input_tokens": 21141,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 21141,
+      "ephemeral_1h_input_tokens": 0
+     },
+     "output_tokens": 2
+    }
+   }
+  }
+ },
+ {
+  "schemaType": "ModelInvocationLog",
+  "schemaVersion": "1.0",
+  "timestamp": "2026-11-04T16:05:11Z",
+  "accountId": "111122223333",
+  "region": "us-west-2",
+  "requestId": "00000000-0000-0000-0000-000000000002",
+  "operation": "InvokeModel",
+  "modelId": "arn:aws:bedrock:us-west-2:111122223333:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "identity": {
+   "arn": "arn:aws:sts::111122223333:assumed-role/ExampleRole/agent-1h"
+  },
+  "input": {
+   "inputContentType": "application/json",
+   "inputTokenCount": 13,
+   "inputBodyJson": {
+    "anthropic_version": "bedrock-2023-05-31",
+    "max_tokens": 20,
+    "system": [
+     {
+      "type": "text",
+      "cache_control": {
+       "type": "ephemeral",
+       "ttl": "1h"
+      },
+      "text": "[1h agent: 21,000-token system prompt, redacted]"
+     }
+    ],
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "Task 1: reply OK."
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "output": {
+   "outputContentType": "application/json",
+   "outputTokenCount": 2,
+   "outputBodyJson": {
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "OK"
+     }
+    ],
+    "usage": {
+     "input_tokens": 13,
+     "cache_read_input_tokens": 21140,
+     "cache_creation_input_tokens": 0,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 0
+     },
+     "output_tokens": 2
+    }
+   }
+  }
+ },
+ {
+  "schemaType": "ModelInvocationLog",
+  "schemaVersion": "1.0",
+  "timestamp": "2026-11-04T16:05:10Z",
+  "accountId": "111122223333",
+  "region": "us-west-2",
+  "requestId": "00000000-0000-0000-0000-000000000003",
+  "operation": "InvokeModel",
+  "modelId": "arn:aws:bedrock:us-west-2:111122223333:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "identity": {
+   "arn": "arn:aws:sts::111122223333:assumed-role/ExampleRole/agent-5m"
+  },
+  "input": {
+   "inputContentType": "application/json",
+   "inputTokenCount": 13,
+   "inputBodyJson": {
+    "anthropic_version": "bedrock-2023-05-31",
+    "max_tokens": 20,
+    "system": [
+     {
+      "type": "text",
+      "cache_control": {
+       "type": "ephemeral"
+      },
+      "text": "[5m agent: 21,000-token system prompt, redacted]"
+     }
+    ],
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "Task 1: reply OK."
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "output": {
+   "outputContentType": "application/json",
+   "outputTokenCount": 2,
+   "outputBodyJson": {
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "OK"
+     }
+    ],
+    "usage": {
+     "input_tokens": 13,
+     "cache_read_input_tokens": 21141,
+     "cache_creation_input_tokens": 0,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 0
+     },
+     "output_tokens": 2
+    }
+   }
+  }
+ },
+ {
+  "schemaType": "ModelInvocationLog",
+  "schemaVersion": "1.0",
+  "timestamp": "2026-11-04T16:10:11Z",
+  "accountId": "111122223333",
+  "region": "us-west-2",
+  "requestId": "00000000-0000-0000-0000-000000000004",
+  "operation": "InvokeModel",
+  "modelId": "arn:aws:bedrock:us-west-2:111122223333:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "identity": {
+   "arn": "arn:aws:sts::111122223333:assumed-role/ExampleRole/agent-1h"
+  },
+  "input": {
+   "inputContentType": "application/json",
+   "inputTokenCount": 13,
+   "inputBodyJson": {
+    "anthropic_version": "bedrock-2023-05-31",
+    "max_tokens": 20,
+    "system": [
+     {
+      "type": "text",
+      "cache_control": {
+       "type": "ephemeral",
+       "ttl": "1h"
+      },
+      "text": "[1h agent: 21,000-token system prompt, redacted]"
+     }
+    ],
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "Task 2: reply OK."
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "output": {
+   "outputContentType": "application/json",
+   "outputTokenCount": 2,
+   "outputBodyJson": {
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "OK"
+     }
+    ],
+    "usage": {
+     "input_tokens": 13,
+     "cache_read_input_tokens": 21140,
+     "cache_creation_input_tokens": 0,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 0
+     },
+     "output_tokens": 2
+    }
+   }
+  }
+ },
+ {
+  "schemaType": "ModelInvocationLog",
+  "schemaVersion": "1.0",
+  "timestamp": "2026-11-04T16:10:10Z",
+  "accountId": "111122223333",
+  "region": "us-west-2",
+  "requestId": "00000000-0000-0000-0000-000000000005",
+  "operation": "InvokeModel",
+  "modelId": "arn:aws:bedrock:us-west-2:111122223333:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "identity": {
+   "arn": "arn:aws:sts::111122223333:assumed-role/ExampleRole/agent-5m"
+  },
+  "input": {
+   "inputContentType": "application/json",
+   "inputTokenCount": 13,
+   "inputBodyJson": {
+    "anthropic_version": "bedrock-2023-05-31",
+    "max_tokens": 20,
+    "system": [
+     {
+      "type": "text",
+      "cache_control": {
+       "type": "ephemeral"
+      },
+      "text": "[5m agent: 21,000-token system prompt, redacted]"
+     }
+    ],
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "Task 2: reply OK."
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "output": {
+   "outputContentType": "application/json",
+   "outputTokenCount": 2,
+   "outputBodyJson": {
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "OK"
+     }
+    ],
+    "usage": {
+     "input_tokens": 13,
+     "cache_read_input_tokens": 21141,
+     "cache_creation_input_tokens": 0,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 0
+     },
+     "output_tokens": 2
+    }
+   }
+  }
+ },
+ {
+  "schemaType": "ModelInvocationLog",
+  "schemaVersion": "1.0",
+  "timestamp": "2026-11-04T16:23:11Z",
+  "accountId": "111122223333",
+  "region": "us-west-2",
+  "requestId": "00000000-0000-0000-0000-000000000006",
+  "operation": "InvokeModel",
+  "modelId": "arn:aws:bedrock:us-west-2:111122223333:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "identity": {
+   "arn": "arn:aws:sts::111122223333:assumed-role/ExampleRole/agent-1h"
+  },
+  "input": {
+   "inputContentType": "application/json",
+   "inputTokenCount": 13,
+   "inputBodyJson": {
+    "anthropic_version": "bedrock-2023-05-31",
+    "max_tokens": 20,
+    "system": [
+     {
+      "type": "text",
+      "cache_control": {
+       "type": "ephemeral",
+       "ttl": "1h"
+      },
+      "text": "[1h agent: 21,000-token system prompt, redacted]"
+     }
+    ],
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "Task 3: reply OK."
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "output": {
+   "outputContentType": "application/json",
+   "outputTokenCount": 2,
+   "outputBodyJson": {
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "OK"
+     }
+    ],
+    "usage": {
+     "input_tokens": 13,
+     "cache_read_input_tokens": 21140,
+     "cache_creation_input_tokens": 0,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 0
+     },
+     "output_tokens": 2
+    }
+   }
+  }
+ },
+ {
+  "schemaType": "ModelInvocationLog",
+  "schemaVersion": "1.0",
+  "timestamp": "2026-11-04T16:23:10Z",
+  "accountId": "111122223333",
+  "region": "us-west-2",
+  "requestId": "00000000-0000-0000-0000-000000000007",
+  "operation": "InvokeModel",
+  "modelId": "arn:aws:bedrock:us-west-2:111122223333:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "identity": {
+   "arn": "arn:aws:sts::111122223333:assumed-role/ExampleRole/agent-5m"
+  },
+  "input": {
+   "inputContentType": "application/json",
+   "inputTokenCount": 13,
+   "inputBodyJson": {
+    "anthropic_version": "bedrock-2023-05-31",
+    "max_tokens": 20,
+    "system": [
+     {
+      "type": "text",
+      "cache_control": {
+       "type": "ephemeral"
+      },
+      "text": "[5m agent: 21,000-token system prompt, redacted]"
+     }
+    ],
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "Task 3: reply OK."
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "output": {
+   "outputContentType": "application/json",
+   "outputTokenCount": 2,
+   "outputBodyJson": {
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "OK"
+     }
+    ],
+    "usage": {
+     "input_tokens": 13,
+     "cache_read_input_tokens": 0,
+     "cache_creation_input_tokens": 21141,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 21141,
+      "ephemeral_1h_input_tokens": 0
+     },
+     "output_tokens": 2
+    }
+   }
+  }
+ }
+]

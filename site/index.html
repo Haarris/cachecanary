@@ -31,7 +31,7 @@
  "url": "https://cachecanary.com/",
  "applicationCategory": "DeveloperApplication",
  "operatingSystem": "macOS, Linux, Windows",
- "softwareVersion": "0.4.1",
+ "softwareVersion": "0.5.0",
  "downloadUrl": "https://pypi.org/project/cachecanary/",
  "license": "https://www.apache.org/licenses/LICENSE-2.0",
  "offers": {
@@ -142,6 +142,16 @@ us.anthropic.claude-sonnet-4-6: hit 50% over 8 calls (read 11496, write 11496, u
   input cost $0.05 at list price; about $0.03 of it lost to cache misses (target: 80% hit rate)
 List prices: Amazon Bedrock on-demand, Oct 2026 (global. IDs at list, others +10%). Use --price for your own rate.</pre></div>
 <p class="note">Here only half the calls used the cache, below the 80% target, so the command fails and shows what the misses cost on this small sample. Run it as a scheduled CI job and that failure becomes your alert. Prices are Bedrock's published list prices; pass <code>--price</code> if you pay a different rate.</p>
+<p>A low hit rate can have different causes, and the fixes are different. Add <code>--ttl-check</code> and CacheCanary looks at every call that had to write the whole cache again, finds the previous call with the same system prompt and tools, and says how long before it came. If the cache expired between calls (5 to 60 minutes), the 1-hour cache helps. If it was within 5 minutes, the 1-hour cache only makes writes cost more.</p>
+<div class="term"><pre><span class="p">$</span> cachecanary logs bedrock-logs/ --ttl-check
+...
+Cache re-writes (calls that read nothing from the cache but wrote to it):
+us.anthropic.claude-sonnet-4-5-20250929-v1:0: 3 re-write(s) in 8 calls, 63422 tokens written by them
+       2  no earlier call that started the same way read or wrote the cache in these logs (42281 tokens)
+       1  5 to 60 minutes after the previous call that started the same way (21141 tokens)
+  The 5-to-60-minute re-writes cost $0.09 as cache writes; the same tokens would cost under $0.01 as cache reads
+  All cache writes here cost $0.31; the same tokens at the 1-hour write price would cost $0.42</pre></div>
+<p class="note">This is a live test: two agents with a 21,000-token prompt, one on the 5-minute cache and one on the 1-hour cache, called at 0, 2, 7 and 20 minutes. The 5-minute one had to write everything again at minute 20. The dollar lines are prices of what the logs show, not a forecast. The <a href="https://github.com/Haarris/cachecanary#why-calls-had-to-write-the-cache-again---ttl-check">README</a> explains each row.</p>
 <p>Already trace your agents with Langfuse? You can skip the logging. Langfuse stores the cache counts for every model call, so one command reads your hit rate from there:</p>
 <div class="term"><pre><span class="p">$</span> cachecanary langfuse --since 7d --environment production --min-hit 0.8</pre></div>
 <p class="note">It needs your Langfuse project's API keys and uses only the token counts. On Langfuse v4 it doesn't download prompts or outputs at all. Some setups store numbers in Langfuse that don't add up, like older Strands versions, which make the cache look perfect. CacheCanary fixes those; the <a href="/langfuse/">Langfuse guide</a> shows what it found.</p>
