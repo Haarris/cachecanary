@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where your Claude Code tokens go: dollars per tool output, Bash command and MCP tool</title>
+<meta name="description" content="Claude Code keeps a transcript of every chat on your machine. I read 30 days of mine and put a dollar figure on every tool output, Bash command and MCP tool: Bash output was 52% of the cost, and pauses past the cache lifetime added $2,938.71 of cache rewrites.">
+<meta property="og:title" content="Where your Claude Code tokens go">
+<meta property="og:description" content="Dollars per tool output, Bash command, MCP tool, skill and subagent, from the transcripts Claude Code already keeps on your machine.">
+<meta property="og:url" content="https://cachecanary.com/claude-code/">
+<meta property="og:type" content="article">
+<meta property="og:image" content="https://cachecanary.com/og-claude-code.png?v=1">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:image:alt" content="Where your Claude Code tokens go, by CacheCanary.">
+<meta property="og:site_name" content="CacheCanary">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://cachecanary.com/claude-code/">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/style.css">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "TechArticle",
+ "headline": "Where your Claude Code tokens go",
+ "description": "Claude Code keeps a transcript of every chat on your machine. I read 30 days of mine and put a dollar figure on every tool output, Bash command and MCP tool: Bash output was 52% of the cost, and pauses past the cache lifetime added $2,938.71 of cache rewrites.",
+ "image": "https://cachecanary.com/og-claude-code.png?v=1",
+ "datePublished": "2026-11-18",
+ "dateModified": "2026-11-18",
+ "author": {
+  "@type": "Person",
+  "name": "Haris Farooq",
+  "url": "https://www.linkedin.com/in/haris-farooq",
+  "sameAs": [
+   "https://www.linkedin.com/in/haris-farooq",
+   "https://github.com/Haarris",
+   "https://harisfarooq.substack.com"
+  ]
+ },
+ "publisher": {
+  "@type": "Organization",
+  "name": "CacheCanary",
+  "url": "https://cachecanary.com/",
+  "logo": {
+   "@type": "ImageObject",
+   "url": "https://cachecanary.com/icon-192.png"
+  }
+ },
+ "mainEntityOfPage": "https://cachecanary.com/claude-code/",
+ "url": "https://cachecanary.com/claude-code/"
+}
+</script>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "BreadcrumbList",
+ "itemListElement": [
+  {
+   "@type": "ListItem",
+   "position": 1,
+   "name": "CacheCanary",
+   "item": "https://cachecanary.com/"
+  },
+  {
+   "@type": "ListItem",
+   "position": 2,
+   "name": "Claude Code guide",
+   "item": "https://cachecanary.com/claude-code/"
+  }
+ ]
+}
+</script>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a class="brand" href="/" aria-label="CacheCanary home">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 29.2h26" stroke="#8a5a2b" stroke-width="1.8" stroke-linecap="round"/><path d="M14.6 24.4l-.8 4.6M18.2 24l.4 5" stroke="#e8892b" stroke-width="1.4" stroke-linecap="round"/><path d="M10.5 19.5L2.2 25.4l4.4.4L12.8 22z" fill="#d9a514"/><ellipse cx="15.5" cy="18.6" rx="8.4" ry="6.2" transform="rotate(-24 15.5 18.6)" fill="#f2c230"/><circle cx="21.8" cy="11.2" r="4.7" fill="#f2c230"/><path d="M26 10l4.4 1.6-4.4 1.8z" fill="#e8892b"/><circle cx="23.2" cy="10.4" r="1.1" fill="#1d1d1b"/><path d="M9.6 19.6c2.2-4.4 6.8-5.6 9.6-4.2-1.2 3.8-5.4 6.4-9.6 4.2z" fill="#d9a514"/></svg>
+    CacheCanary
+  </a>
+  <nav>
+    <a href="/">Home</a>
+    <details class="guides">
+      <summary>Guides</summary>
+      <div class="menu">
+        <a href="/litellm/">LiteLLM</a>
+        <a href="/strands/">Strands Agents</a>
+        <a href="/langchain/">LangChain</a>
+        <a href="/langfuse/">Langfuse</a>
+        <a href="/claude-code/">Claude Code</a>
+        <a href="/#guides">All guides</a>
+      </div>
+    </details>
+    <a href="/check/">Checker</a>
+    <a href="https://github.com/Haarris/cachecanary">GitHub</a>
+  </nav>
+</header>
+
+<main>
+<h1>Where your Claude Code tokens go</h1>
+
+<p class="lead">Claude Code keeps a transcript of every chat on your machine, with the exact token counts of each request it sent. I wrote <code>cachecanary claude-code</code> to read them and put a dollar figure on each tool output, Bash command, MCP tool, skill and subagent. Then I ran it on my own last 30 days (November 18 2026): 2,022 sessions, 1,491 subagent runs and 135,477 requests.</p>
+
+<p>The short version: you pay for a tool output more than once. It's written to the cache with the next request, then read again by every request after that until the chat is compacted. On my machine, Bash output was 52% of the cost, and pauses longer than the cache lifetime added $2,938.71 of cache rewrites.</p>
+
+<h2>The setup I'd use</h2>
+<pre class="yaml">pip install cachecanary
+cachecanary claude-code
+# only one table: tool, bash, mcp, skill, agent or item
+cachecanary claude-code --since 7d --by bash</pre>
+<p>It reads <code>~/.claude/projects</code>, or <code>$CLAUDE_CONFIG_DIR/projects</code> if you set that, and only reads. Nothing is sent anywhere. The output has tool names, Bash command names (the program and its subcommand, like <code>git diff</code>), MCP tool names and numbers, and no prompts, outputs, commands or paths. Dollars are Anthropic's API list prices for the same tokens, not your subscription bill. Add <code>--price</code> if you pay a different rate, and <code>--json</code> for your own scripts.</p>
+
+<h2>What I found</h2>
+<p>Most of my sessions are scripted agents, so the mix isn't typical. At API list prices the 30 days came to $16,367.58. The biggest groups:</p>
+<div class="scroll">
+<table>
+  <thead><tr><th>What</th><th>Cost</th><th>Share</th></tr></thead>
+  <tbody>
+    <tr><td>Bash (commands and their output)</td><td>$8,532.06</td><td>52.1%</td></tr>
+    <tr><td>Claude's thinking</td><td>$1,848.24</td><td>11.3%</td></tr>
+    <tr><td>CLAUDE.md and instructions</td><td>$703.18</td><td>4.3%</td></tr>
+    <tr><td>Write</td><td>$482.04</td><td>2.9%</td></tr>
+    <tr><td>Claude's replies</td><td>$449.84</td><td>2.7%</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="note">Each row counts the cache write when an item arrived, every cache read after that, and the output tokens it took to produce.</p>
+
+<h3>1. Bash output was half the cost</h3>
+<p>Most of it came from four commands: <code>python</code> 11.6%, <code>sed</code> 10.7%, <code>grep</code> 8.6% and <code>cat</code> 6.6% of the total. These are the commands that print a lot. Two things decide what an output costs:</p>
+<ul>
+  <li><b>Its size.</b> The tokens go into the cache once, at the write price (1.25x the input price for 5 minutes, 2x for an hour).</li>
+  <li><b>How long the chat goes on after it.</b> Every later request reads it again, at a twentieth of the input price on Opus 5.5. In a long chat the reads add up to more than the write.</li>
+</ul>
+<p>The command name is the first real command: <code>cd repo &amp;&amp; git diff</code> counts as <code>git diff</code>, and <code>date &amp;&amp; python run.py</code> counts as <code>python</code>, because <code>date</code> prints almost nothing.</p>
+<p>The fix is to print less: <code>head</code>, <code>tail</code>, <code>grep</code>, quieter flags, or a PreToolUse hook that shortens long output.</p>
+
+<h3>2. Pauses past the cache lifetime rewrote the whole context</h3>
+<p>1,238 requests came after a pause longer than the cache lifetime (5 minutes or an hour) and wrote the cache again. That cost $2,938.71 more than reading it. The rewrite is the size of the whole chat, so long pauses in big chats cost the most.</p>
+<p>The first request of each chat and subagent isn't counted as a rebuild, because there was nothing to read yet. Those 3,507 first requests wrote 80,394,463 tokens to the cache, $287.83.</p>
+
+<h3>3. The costliest single items</h3>
+<p>The costliest single item was a skill's instructions: 106,036 tokens, sent again by 676 later requests, $16.01. Next were four Read outputs inside subagents, 15,945 to 25,354 tokens each, sent again 456 to 633 times: $4.76 to $5.53 each.</p>
+
+<h3>Smaller things</h3>
+<ul>
+  <li>Claude's earlier thinking stays in the context and is billed as input. Most thinking blocks are logged with no text, so their size comes from the thinking token count of each request.</li>
+  <li>Main chats read 99.1% of their prompt from the cache, subagents 95.7%. Subagents use the 5-minute cache on my setup.</li>
+  <li>One MCP tool had 9.9% of the tokens added but 0.2% of the dollars, because 99% of its tokens went to Claude Haiku 5.5 requests.</li>
+  <li>Web searches are billed per search. My 1,286 searches cost $12.86 in fees, on top of their tokens.</li>
+</ul>
+
+<h3>What Claude Code gets right</h3>
+<p>Its transcripts record the exact usage of every request, with the 5-minute and 1-hour cache writes split out, the parent of every line, and its own running cost. That is what makes a dollar figure per output possible. For 2,004 of my 2,007 sessions without subagents, CacheCanary's total was within 1% of the cost Claude Code records for itself.</p>
+
+<h2>Check your own machine</h2>
+<p>Run it on your own transcripts with the command above. These are lines from the top of the real output for my 30 days:</p>
+<div class="term"><pre><span class="p">$</span> cachecanary claude-code
+Claude Code since 2026-10-19 (30 days): 2,022 sessions, 1,491 subagent runs, 135,477 requests
+Total $16,367.58 at Anthropic API list prices. This is an API list price equivalent, not your subscription bill.
+
+Biggest cost: Bash, $8,532.06 (52.1% of $16,367.58); mostly 'python' 11.6%, 'sed' 10.7%, 'grep' 8.6%.
+
+Spend: cache reads $9,805.84, 1h cache writes $2,332.12, 5m cache writes $2,655.71, uncached input $1.33, output $1,559.71, web search fees $12.86 (1,286 searches)
+Cache hit rate: 98.2% overall, main chats 99.1%, subagents 95.7%
+First calls: 3,507 chat or subagent runs wrote 80,394,463 tokens to the cache on their first request ($287.83)
+Compactions: 122 (auto 111, manual 11); prompt 953,284 tokens before, 89,022 after on average</pre></div>
+<p class="note">In plain words: most of what I paid for was reading the cache, which is the cheap part. Writes cost $4,987.83 and output $1,559.71. Below this come the tables: by tool, Bash command, MCP server, skill and subagent, and the costliest single outputs.</p>
+<p><code>--details</code> adds a short label to the costliest outputs (the start of the command or the file path), with secrets and your home folder taken out. The flags are in the <a href="https://github.com/Haarris/cachecanary#where-your-claude-code-tokens-go">README</a>.</p>
+
+<h2>How I tested this</h2>
+<p>The tests use synthetic transcripts that copy the shape of real ones, with dollar amounts worked out by hand: a 10,000-token Bash result followed by 5 more requests pays exactly one cache write and 5 cache reads. On my own 30 days (3,689 files, 134,175 requests), the token totals matched a separate recount exactly. I also ran small sessions with outputs of known size: the total matched my hand calculation to the cent, and a Bash output twice as long grew by 98% of the real change in tokens. The format isn't documented and changes, so it was checked on Claude Code 2.1.266 to 2.1.325, and <code>--debug-shapes</code> prints counts you can send me without any content. Calls Claude Code doesn't write to the transcript, like side calls to other models, aren't counted.</p>
+<p>Framework guides: <a href="/litellm/">LiteLLM</a>, <a href="/strands/">Strands Agents</a> and <a href="/langchain/">LangChain</a>. More on why caching breaks on Bedrock: <a href="https://harisfarooq.substack.com/p/five-ways-claude-prompt-caching-quietly">Five ways Claude prompt caching quietly breaks on Amazon Bedrock</a>.</p>
+<p>Want a quick number for your own app? Paste three totals from CloudWatch into the <a href="/check/">cache checker</a>. It runs in your browser, nothing to install.</p>
+<p>Using CacheCanary? I'd love to hear how it's going, good or bad, and whether you'd want the dashboard. Email me at <a href="mailto:hello@cachecanary.com">hello@cachecanary.com</a>. I read every message.</p>
+<p>Want help with your own app? I also do this hands-on: finding out why your cache misses, fixing it, and checking that the bill comes down. Same address: <a href="mailto:hello@cachecanary.com">hello@cachecanary.com</a>.</p>
+</main>
+
+<footer>
+  CacheCanary is free and open source under the Apache 2.0 license. Made by <a href="https://www.linkedin.com/in/haris-farooq">Haris Farooq</a>, an engineer who runs Claude agents on Bedrock in production.<br>
+  <a href="https://github.com/Haarris/cachecanary">GitHub</a> · <a href="https://www.linkedin.com/in/haris-farooq">LinkedIn</a> · <a href="mailto:hello@cachecanary.com">hello@cachecanary.com</a>
+</footer>
+
+</div>
+<script src="/main.js" defer></script>
+</body>
+</html>

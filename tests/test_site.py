@@ -9,13 +9,15 @@ LITELLM = (SITE / "litellm" / "index.html").read_text()
 STRANDS = (SITE / "strands" / "index.html").read_text()
 LANGCHAIN = (SITE / "langchain" / "index.html").read_text()
 LANGFUSE = (SITE / "langfuse" / "index.html").read_text()
-GUIDES = (LITELLM, STRANDS, LANGCHAIN, LANGFUSE)
+CLAUDE_CODE = (SITE / "claude-code" / "index.html").read_text()
+GUIDES = (LITELLM, STRANDS, LANGCHAIN, LANGFUSE, CLAUDE_CODE)
 PAGES = ("index.html", "404.html", "litellm/index.html", "strands/index.html", "langchain/index.html", "langfuse/index.html",
-         "check/index.html")
+         "claude-code/index.html", "check/index.html")
 
 
 def test_required_files_exist():
-    for name in ("index.html", "404.html", "litellm/index.html", "strands/index.html", "langchain/index.html", "langfuse/index.html", "style.css", "main.js", "favicon.svg", "_headers", "robots.txt"):
+    for name in ("index.html", "404.html", "litellm/index.html", "strands/index.html", "langchain/index.html", "langfuse/index.html",
+                 "claude-code/index.html", "style.css", "main.js", "favicon.svg", "_headers", "robots.txt"):
         assert (SITE / name).is_file(), name
 
 
@@ -98,7 +100,7 @@ def test_sitemap_and_robots():
     locs = [e.text for e in root.iter("{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
     assert locs == ["https://cachecanary.com/", "https://cachecanary.com/litellm/", "https://cachecanary.com/strands/",
                     "https://cachecanary.com/langchain/", "https://cachecanary.com/langfuse/",
-                    "https://cachecanary.com/check/"]
+                    "https://cachecanary.com/claude-code/", "https://cachecanary.com/check/"]
     assert "Sitemap: https://cachecanary.com/sitemap.xml" in (SITE / "robots.txt").read_text()
 
 
@@ -126,11 +128,12 @@ def test_litellm_page_basics_and_links():
     assert 'rel="canonical" href="https://cachecanary.com/litellm/"' in LITELLM
     assert "—" not in LITELLM  # writing style: no em dashes
     guides = re.search(r'<h2 id="guides">.*?</ul>', INDEX, re.S).group(0)
-    assert all(f'href="/{g}/"' in guides for g in ("litellm", "strands", "langchain", "langfuse"))  # the home page's guides section
+    assert all(f'href="/{g}/"' in guides for g in ("litellm", "strands", "langchain", "langfuse", "claude-code"))  # the home page's guides section
     for page in (INDEX,) + GUIDES:  # every top menu has a Guides dropdown with each guide
         nav = re.search(r"<nav>(.*?)</nav>", page, re.S).group(1)
         menu = re.search(r'<details class="guides">.*?</details>', nav, re.S).group(0)
-        for link in ('href="/litellm/"', 'href="/strands/"', 'href="/langchain/"', 'href="/langfuse/"', 'href="/#guides"'):
+        for link in ('href="/litellm/"', 'href="/strands/"', 'href="/langchain/"', 'href="/langfuse/"', 'href="/claude-code/"',
+                     'href="/#guides"'):
             assert link in menu
         assert '<script src="/main.js" defer></script>' in page  # closes the menu on outside click and Escape
         assert "soon" not in menu  # every guide listed is live
@@ -175,7 +178,8 @@ def test_social_preview_images():
     """LinkedIn, X and Slack show a blank box without og:image; each page has its own 2400x1260 card (sharp on high-resolution screens)."""
     import struct
     for html, name in ((INDEX, "og.png"), (LITELLM, "og-litellm.png"), (STRANDS, "og-strands.png"), (LANGCHAIN, "og-langchain.png"),
-                       (LANGFUSE, "og-langfuse.png"), ((SITE / "check" / "index.html").read_text(), "og-check.png")):
+                       (LANGFUSE, "og-langfuse.png"), (CLAUDE_CODE, "og-claude-code.png"),
+                       ((SITE / "check" / "index.html").read_text(), "og-check.png")):
         # ?v=N busts LinkedIn's image cache; bump it whenever a card changes.
         assert re.search(rf'<meta property="og:image" content="https://cachecanary.com/{re.escape(name)}\?v=\d+">', html)
         assert 'content="summary_large_image"' in html
@@ -308,7 +312,8 @@ def test_search_result_structured_data():
     """Site name for Google results, and each guide marked up as an article with a breadcrumb."""
     website = [d for d in _json_ld(INDEX) if d["@type"] == "WebSite"]
     assert website and website[0]["name"] == "CacheCanary" and website[0]["url"] == "https://cachecanary.com/"
-    for html, path in ((LITELLM, "litellm"), (STRANDS, "strands"), (LANGCHAIN, "langchain"), (LANGFUSE, "langfuse")):
+    for html, path in ((LITELLM, "litellm"), (STRANDS, "strands"), (LANGCHAIN, "langchain"), (LANGFUSE, "langfuse"),
+                       (CLAUDE_CODE, "claude-code")):
         data = {d["@type"]: d for d in _json_ld(html)}
         article, crumbs = data["TechArticle"], data["BreadcrumbList"]
         url = f"https://cachecanary.com/{path}/"
@@ -332,7 +337,8 @@ def test_author_links_everywhere():
     readme = (SITE.parent / "README.md").read_text()
     assert f"[Haris Farooq]({li})" in readme
     for link in ("https://cachecanary.com", "https://cachecanary.com/litellm/", "https://cachecanary.com/strands/",
-                 "https://cachecanary.com/langchain/", "https://cachecanary.com/langfuse/"):
+                 "https://cachecanary.com/langchain/", "https://cachecanary.com/langfuse/",
+                 "https://cachecanary.com/claude-code/"):
         assert f"]({link})" in readme
 
 
@@ -489,3 +495,41 @@ def test_checker_is_in_every_top_menu_and_every_guide():
     for html in GUIDES:
         main = html.split("<main>")[1].split("</main>")[0]
         assert 'into the <a href="/check/">cache checker</a>' in main
+
+
+def test_claude_code_page_basics_and_links():
+    assert '<html lang="en">' in CLAUDE_CODE and 'name="viewport"' in CLAUDE_CODE and "<title>" in CLAUDE_CODE
+    assert 'rel="canonical" href="https://cachecanary.com/claude-code/"' in CLAUDE_CODE
+    assert "\u2014" not in CLAUDE_CODE and "\u2013" not in CLAUDE_CODE  # writing style: no em or en dashes
+    assert "https://cachecanary.com/claude-code/" in (SITE / "llms.txt").read_text()
+    top = INDEX.split('<h2>What a broken cache costs</h2>')[0]
+    assert '<a href="/claude-code/">' in top  # reachable from the top of the home page
+    body = CLAUDE_CODE.split("<main>")[1]
+    assert all(f'href="/{g}/"' in body for g in ("litellm", "strands", "langchain"))
+    assert "not your subscription bill" in body  # the dollars are a list price equivalent
+
+
+def test_claude_code_page_output_has_the_real_line_shapes(tmp_path, capsys):
+    """The output on the page is from a real run on the author's machine. Each line it shows must still start the
+    way the CLI prints it, so the page can't drift from the tool's wording."""
+    import html
+    from cachecanary import cli
+    from test_claude_code import bash_session
+    root = tmp_path / "projects"
+    t = bash_session(after=3)
+    t.compact(pre=15200, post=2000)
+    t.summary("s" * 4000)
+    t.request(read=4999, w5=1800, out=10)
+    t.write(root / "p" / "s1.jsonl")
+    assert cli.main(["claude-code", "--path", str(root)]) == 0
+    out = capsys.readouterr().out
+    shown = html.unescape(re.search(r'<div class="term"><pre>(.*?)</pre></div>', CLAUDE_CODE, re.S).group(1))
+    shown = re.sub(r"<[^>]+>", "", shown).splitlines()
+    assert shown[0] == "$ cachecanary claude-code"
+    for line in shown[1:]:
+        if not line.strip():
+            continue
+        if line.startswith("Total "):
+            assert line.endswith("This is an API list price equivalent, not your subscription bill.")
+        prefix = re.split(r"[\d$]", line, maxsplit=1)[0]
+        assert any(o.startswith(prefix) for o in out.splitlines()), line

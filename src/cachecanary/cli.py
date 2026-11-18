@@ -5,6 +5,8 @@
   cachecanary probe request.json --model ID [--region R] [--stream]
   cachecanary logs FILE_OR_FOLDER ... [--by model|principal|model+principal] [--min-hit 0.5] [--price 3] [--ttl-check]
   cachecanary langfuse [--since 7d | --from DATE --to DATE] [--environment E] [--by model|name|environment]
+  cachecanary claude-code [--since 30d|DATE] [--project S] [--session ID] [--by tool|bash|mcp|skill|agent|item]
+                          [--top N] [--details] [--json] [--price X] [--min-hit H] [--path DIR] [--debug-shapes]
 
 Exit codes: 0 ok, 1 caching problem found (use to gate CI), 2 could not run (bad input, AWS error).
 Add --github (before the command) for GitHub Actions annotations and a job summary.
@@ -13,12 +15,13 @@ Add --github (before the command) for GitHub Actions annotations and a job summa
 import argparse
 import json
 import os
+import re
 import sys
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from cachecanary import __version__, diff, langfuse, lint, logs, pricing, probe, ttl
+from cachecanary import __version__, claude_code, diff, langfuse, lint, logs, pricing, probe, ttl
 from cachecanary import github as gh
 from cachecanary.request import RequestError, normalize
 
@@ -338,6 +341,74 @@ def cmd_langfuse(args) -> int:
     return _report(groups, args, "langfuse", "No generations found in Langfuse for this window.", notes)
 
 
+def cmd_claude_code(args) -> int:
+    roots = [Path(p).expanduser() for p in args.path] if args.path else [claude_code.default_root()]
+    missing = [str(r) for r in roots if not r.is_dir()]
+    if len(missing) == len(roots):
+        raise InputError(f"no Claude Code transcripts folder at {', '.join(missing)} "
+                         "(Claude Code keeps them in $CLAUDE_CONFIG_DIR/projects, default ~/.claude/projects; "
+                         "use --path to read another folder)")
+    now = datetime.now(timezone.utc)
+    try:
+        since = args.since if isinstance(args.since, datetime) else now - args.since
+        since_ts = since.timestamp()
+    except (OverflowError, ValueError, OSError):
+        raise InputError("--since is too far back; use a length like 30d or a date like 2026-10-01") from None
+    if since >= now:
+        raise InputError("--since must be in the past")
+    progress = None
+    if sys.stderr.isatty():
+        def progress(n, total):
+            print(f"\rReading Claude Code transcripts: {n:,} of {total:,} files", end="", file=sys.stderr, flush=True)
+    try:
+        report = claude_code.analyze(roots, since=since_ts, project=args.project, session=args.session,
+                                     custom_price=args.price, progress=progress)
+    finally:
+        if progress:
+            print(file=sys.stderr)
+    if report.files_found == 0:
+        raise InputError(f"no Claude Code transcripts (*.jsonl) under {', '.join(str(r) for r in roots)}")
+    if args.debug_shapes:
+        shapes = claude_code.debug_shapes(report)
+        if args.json:
+            print(json.dumps(shapes, indent=2))
+        else:
+            print("Transcript shapes (counts of types and key names only, no content):")
+            for key, value in shapes.items():
+                print(f"  {key}: {value}")
+        return EXIT_OK
+    top_items = args.top or 20
+    data = claude_code.summarize(report, top=top_items, details=args.details)
+    if args.json:
+        print(json.dumps(data, indent=2))
+    elif report.all.requests == 0:
+        print("No Claude Code requests in this window."
+              + (" (Filters: " + ", ".join(f for f in (args.project and f"--project {args.project}",
+                                                       args.session and f"--session {args.session}") if f) + ")"
+                 if args.project or args.session else ""))
+    else:
+        print("\n".join(claude_code.render_text(report, data, args.by, args.top or 10, args.details)))
+    if args.min_hit is not None and report.all.requests and report.all.hit_ratio < args.min_hit:
+        if not args.json:
+            print(f"Cache hit rate {report.all.hit_ratio:.1%} is below --min-hit {args.min_hit:.0%}.")
+        return EXIT_PROBLEM
+    return EXIT_OK
+
+
+def _since_or_date(value: str):
+    """30d, 24h, 2w ... (a timedelta) or a date / ISO time (a datetime). Fractions of a second of any
+    length are accepted on every Python version (3.10's fromisoformat takes only 3 or 6 digits)."""
+    try:
+        return langfuse.parse_since(value)
+    except (ValueError, OverflowError):
+        pass
+    text = re.sub(r"(T\d{2}:\d{2}:\d{2})\.(\d+)", lambda m: f"{m.group(1)}.{(m.group(2) + '000000')[:6]}", value.strip())
+    try:
+        return langfuse.parse_time(text)
+    except (ValueError, OverflowError):
+        raise argparse.ArgumentTypeError("use a length like 30d, 24h or 2w, or a date like 2026-10-01") from None
+
+
 def _unit(value: str) -> float:
     f = float(value)
     if not 0 <= f <= 1:
@@ -437,6 +508,31 @@ def build_parser() -> argparse.ArgumentParser:
                    help="stop after this many generations (default 20000)")
     p.add_argument("--file", action="append", help="read a saved observations API response instead of calling Langfuse")
     p.set_defaults(func=cmd_langfuse)
+
+    p = sub.add_parser("claude-code", help="what Claude Code spent, per tool output, Bash command, MCP server, "
+                                           "skill and subagent, from the local transcripts",
+                       description="Reads Claude Code's transcripts ($CLAUDE_CONFIG_DIR/projects, default "
+                                   "~/.claude/projects) and shows where the money went: each tool output pays "
+                                   "its cache write once and a cache read on every later request until it "
+                                   "leaves the context. Dollars are an API list price equivalent, not your "
+                                   "subscription bill. Files are only read; nothing is sent anywhere.")
+    p.add_argument("--since", type=_since_or_date, default=langfuse.parse_since("30d"),
+                   help="how far back, e.g. 7d, 24h, 2w, or a date like 2026-10-01 (default 30d)")
+    p.add_argument("--project", help="only projects whose folder name contains this (case-insensitive)")
+    p.add_argument("--session", help="only this session ID (or its start)")
+    p.add_argument("--by", choices=["tool", "bash", "mcp", "skill", "agent", "item"],
+                   help="show only this table (default: all)")
+    p.add_argument("--top", type=_positive, help="rows per table (default 10; 20 costliest items)")
+    p.add_argument("--details", action="store_true",
+                   help="add short redacted command or file labels to the costliest items")
+    p.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="machine-readable output")
+    p.add_argument("--price", type=_price, help="your input price in USD per million tokens, instead of list "
+                   "prices (cache and output prices keep the model's shares of it)")
+    p.add_argument("--min-hit", type=_unit, help="exit 1 if the overall cache hit rate is below this (0-1)")
+    p.add_argument("--path", action="append", help="transcripts folder to read instead (repeatable)")
+    p.add_argument("--debug-shapes", action="store_true",
+                   help="print counts of line types, attachment types and key names (no content) for a bug report")
+    p.set_defaults(func=cmd_claude_code)
     return parser
 
 

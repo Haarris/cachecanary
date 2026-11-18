@@ -13,18 +13,18 @@ I built CacheCanary after running into these failures while running Claude agent
 
 I wrote up the five ways I've seen caching break on Bedrock, with the bug reports behind each one and the lookback limit I measured: [Five ways Claude prompt caching quietly breaks on Amazon Bedrock](https://harisfarooq.substack.com/p/five-ways-claude-prompt-caching-quietly).
 
-Website: [cachecanary.com](https://cachecanary.com). It has guides that show exactly what a framework sends to Bedrock, where the cache is lost, and a tested setup that keeps it: [LiteLLM](https://cachecanary.com/litellm/), [Strands Agents](https://cachecanary.com/strands/) and [LangChain](https://cachecanary.com/langchain/). If you use Langfuse, the [Langfuse guide](https://cachecanary.com/langfuse/) shows how to read your real hit rate from your traces.
+Website: [cachecanary.com](https://cachecanary.com). It has guides that show exactly what a framework sends to Bedrock, where the cache is lost, and a tested setup that keeps it: [LiteLLM](https://cachecanary.com/litellm/), [Strands Agents](https://cachecanary.com/strands/) and [LangChain](https://cachecanary.com/langchain/). If you use Langfuse, the [Langfuse guide](https://cachecanary.com/langfuse/) shows how to read your real hit rate from your traces. If you use Claude Code, the [Claude Code guide](https://cachecanary.com/claude-code/) shows where its tokens go.
 
 What that costs: the cached part of each request becomes about 10x more expensive, because cache reads are billed at a tenth of the input price. For one agent with a 10,000-token prompt and 100,000 requests a month, that's roughly $2,700 a month extra at Anthropic's list price for Claude Sonnet 4.6 ($3 per million input tokens; Bedrock prices vary by region).
 
-CacheCanary is a small CLI and GitHub Action for this. It checks your requests in CI, tells you why a request missed the cache, and reads your Bedrock logs or your Langfuse traces to show hit rates in production.
+CacheCanary is a small CLI and GitHub Action for this. It checks your requests in CI, tells you why a request missed the cache, and reads your Bedrock logs or your Langfuse traces to show hit rates in production. It also reads Claude Code's local transcripts and shows which tool outputs, Bash commands and MCP tools the money went to.
 
 Want a quick number first? Paste three totals from CloudWatch into the [cache checker](https://cachecanary.com/check/). It runs in your browser, nothing to install.
 
 ## Install
 
 ```bash
-pip install cachecanary          # lint, diff, logs (no AWS needed)
+pip install cachecanary          # lint, diff, logs, langfuse, claude-code (no AWS needed)
 pip install "cachecanary[aws]"   # adds probe, which calls Bedrock
 ```
 
@@ -60,8 +60,9 @@ The last one is easy to miss. The same prompt caches fine on Sonnet 4.6 (minimum
 | `probe request.json --model ID [--region R] [--stream]` | Sends the request twice and checks the second one read from cache | nothing was read from cache |
 | `logs files-or-folders... [--by model\|principal] [--min-hit 0.5] [--price 3] [--ttl-check]` | Hit rate and input cost per model or IAM principal from Bedrock invocation logs, plus how much the misses cost. `--ttl-check` adds why calls had to write the cache again, and what those writes cost at the read and 1-hour write prices | a group is under the threshold |
 | `langfuse [--since 7d] [--environment E] [--by model\|name\|environment] [--min-hit 0.5] [--price 3]` | The same, from the generations your Langfuse project already records (no invocation logging needed) | a group is under the threshold |
+| `claude-code [--since 30d] [--project P] [--by tool\|bash\|mcp\|skill\|agent\|item] [--details] [--min-hit 0.9] [--price 3]` | What Claude Code spent per tool output, Bash command, MCP tool, skill and subagent, from its local transcripts | the overall hit rate is under `--min-hit` |
 
-Exit code 2 means it couldn't run at all (bad file, no model access, no AWS credentials). `--json` and `--github` go before the command.
+Exit code 2 means it couldn't run at all (bad file, no model access, no AWS credentials, no Claude Code transcripts). `--json` and `--github` go before the command.
 
 ## What it looks for
 
@@ -195,15 +196,62 @@ Read 10 generations.
 
 Only model calls (generations) are counted. Agent and chain spans can carry the summed usage of the calls under them, so counting them would count tokens twice. `--file` reads a saved observations API response instead of calling Langfuse.
 
+## Where your Claude Code tokens go
+
+In Claude Code, you pay for a tool output more than once. It's written to the cache with the next request, then read from the cache by every request after that until the chat is compacted. A 10,000-token Bash result followed by 5 more requests pays for one cache write and 5 cache reads. `claude-code` reads the transcripts Claude Code keeps on your machine, prices every output that way, and adds them up per tool, Bash command, MCP server and tool, skill and subagent.
+
+```bash
+cachecanary claude-code                       # the last 30 days
+cachecanary claude-code --since 7d --by bash  # only the Bash commands table
+cachecanary claude-code --json                # everything, for your own scripts
+```
+
+It reads `~/.claude/projects`, or `$CLAUDE_CONFIG_DIR/projects` if you set that (`--path` reads another folder). `--project` and `--session` narrow it down, `--top` sets the rows per table, and `--min-hit 0.9` fails when the overall cache hit rate is under 90%.
+
+This is the top of the report for the last 30 days on my own machine (November 18 2026). Most of my sessions are scripted agents, so the mix isn't typical:
+
+```text
+Claude Code since 2026-10-19 (30 days): 2,022 sessions, 1,491 subagent runs, 135,477 requests
+Total $16,367.58 at Anthropic API list prices. This is an API list price equivalent, not your subscription bill.
+
+Biggest cost: Bash, $8,532.06 (52.1% of $16,367.58); mostly 'python' 11.6%, 'sed' 10.7%, 'grep' 8.6%.
+Where to look first:
+  1. 1,238 requests came after a pause longer than the cache lifetime and wrote the cache again: $2,938.71 more than reading it. The rewrite is the size of the whole context, so long pauses in big chats cost the most.
+  2. Bash 'python' cost $1,900.73 (11.6%). Its output stays in the context and is re-read on every later request: cut it down (head, tail, grep, quieter flags) or shorten it with a PreToolUse hook.
+
+Spend: cache reads $9,805.84, 1h cache writes $2,332.12, 5m cache writes $2,655.71, uncached input $1.33, output $1,559.71, web search fees $12.86 (1,286 searches)
+Cache hit rate: 98.2% overall, main chats 99.1%, subagents 95.7%
+Cache writes: 1h 343,904,773 tokens ($2,332.12), 5m 533,494,951 tokens ($2,655.71)
+First calls: 3,507 chat or subagent runs wrote 80,394,463 tokens to the cache on their first request ($287.83)
+Cache rebuilds: 1,402 requests wrote again what they could have read, $3,143.45 more than reading it: idle over 5m 956 ($1,704.85), idle over 1h 279 ($1,232.45), unknown 31 ($99.06), compaction 120 ($50.06), Claude Code version changed 8 ($32.78), thinking removed 5 ($22.84), waited on a subagent past the cache lifetime 3 ($1.41)
+Compactions: 122 (auto 111, manual 11); prompt 953,284 tokens before, 89,022 after on average
+```
+
+Below that come the tables: where the money went, then by tool, Bash command, MCP server, skill and subagent, and the costliest single outputs with how many later requests sent each one again.
+
+How the dollars work:
+
+- **List price equivalent.** On a subscription you don't pay per token. The figure is what the same tokens cost at Anthropic's API prices (pricing page, checked November 18 2026), with the 1-hour cache write price, Opus 5.5's and Sonnet 5.5's cheaper cache reads, the Haiku 5.5 price for prompts over 100,000 tokens, fast mode and US-only inference. Bedrock model IDs get Bedrock prices. If you pay a different rate, pass `--price` with your input price per million tokens.
+- **By position.** A prompt is a cached prefix. Each request's cache reads pay for its oldest tokens, and its 1-hour writes, 5-minute writes and uncached input pay for the newest. So a new output pays its write once and a read on every later request.
+- **Sizes.** The transcript has exact token counts per request, not per output. What a request adds goes first to the previous answer (its exact output tokens, thinking included). The rest is split across the other things added since, by characters. The attributed dollars add up to the total.
+- **Rebuilds.** A request that writes again at least half of what it could have read is a rebuild, shown with the likely cause: a pause past the cache lifetime, a compaction, a model change or a new Claude Code version. The first request of a chat or subagent isn't a rebuild; it's shown on its own.
+- Web searches are billed per search ($10 per 1,000). Their count comes from the running total Claude Code keeps in the transcript.
+
+The report and `--json` show tool names, Bash command names (the program and its subcommand, like `git diff`), MCP server and tool names, skill names and numbers. They don't show prompts, outputs, commands or paths. `--details` adds a short label to the costliest outputs (the start of the command or the file path), with secrets and your home folder taken out. `--debug-shapes` prints only counts of line types and key names, so you can send me a bug report without any content.
+
+Claude Code's own `/usage` shows, on subscription plans, what share of recent usage went to each skill, subagent, plugin and MCP server, and a cache line for the current chat. `claude-code` adds dollars per tool output, Bash command and MCP tool, over all the history on your machine with subagents included, for API key users as well, with JSON output. The [Context Cost Explorer](https://xkqr.org/ctxcost) uses a similar idea in the browser: an output keeps costing for as long as it stays in the context.
+
 ## How it's tested
 
 The checks follow AWS's documented prompt-caching rules. The core behaviour was verified against live Amazon Bedrock: Converse and InvokeModel, streaming, both cache lifetimes (5 minutes and 1 hour), model minimums, prompt changes and the exact lookback limit (21 positions hit, 22 miss, re-measured October 30 2026 on Sonnet 4.6 and 5.5 after Bedrock changed how it counts tool calls). Every check added in 0.3 was measured live first, and `scripts/live_v03_checks.py` re-runs those cases against Bedrock and compares CacheCanary's verdict with what Bedrock did (15 of 15 agreed in October 2026). Every check also has unit tests. The log reader is tested against real Bedrock invocation logs (redacted copies are in [tests/fixtures](https://github.com/Haarris/cachecanary/tree/main/tests/fixtures)), and `--ttl-check` against real logs with request bodies from Converse, ConverseStream and InvokeModel calls, including one stored in S3 (eu-west-1, November 2026). The Langfuse reader is tested against records that Strands, LiteLLM and LangChain wrote into a real Langfuse 4.64 server, and against a production Langfuse Cloud project, where its numbers matched a separate recount for every model.
+
+`claude-code` is tested on synthetic transcripts that copy the shape of real ones, with dollar amounts worked out by hand, like the 10,000-token Bash result above (851 tests in the whole suite, on Python 3.10 and 3.12). On my own transcripts (30 days, 3,689 files, 134,175 requests), its token totals matched a separate recount exactly. For 2,004 of 2,007 sessions without subagents, its dollars were within 1% of the cost Claude Code records for itself; the other three were lower because Claude Code made calls it doesn't write to the transcript. I also ran small Claude Code sessions with outputs of known size and worked out their cost by hand from the token counts: the session total matched to the cent, and when the same Bash output was twice as long, its figure grew by 98% of the real change in tokens. Breaking the request dedupe, the compaction handling, the position pricing or the output sizing on purpose makes the tests fail.
 
 To run the live checks yourself, use an AWS Region without production traffic: `python scripts/live_test.py --region <region>`.
 
 ## Privacy
 
-Everything runs on your machine or CI runner. Nothing is sent anywhere. `probe` only calls your own Bedrock endpoint with your own credentials, and `langfuse` only reads from your own Langfuse project with your own keys and stores nothing.
+Everything runs on your machine or CI runner. Nothing is sent anywhere. `probe` only calls your own Bedrock endpoint with your own credentials, `langfuse` only reads from your own Langfuse project with your own keys and stores nothing, and `claude-code` only reads Claude Code's transcripts on your machine.
 
 ## Limits
 
@@ -212,7 +260,13 @@ Everything runs on your machine or CI runner. Nothing is sent anywhere. `probe` 
 - `langfuse` can only check a call's counts when the integration sent a total. Calls with no cache fields at all are counted as uncached and listed in the output, because Langfuse can't tell "caching was off" from "the integration doesn't report cache tokens".
 - Dollar figures use list prices, which change. Batch, provisioned throughput and priority tiers aren't covered; use `--price` for those.
 - `--ttl-check` matches calls by system prompt and tools only when the request body is in the log record. The same prompt sent through Converse and InvokeModel, or as a plain string versus a list of blocks, is written differently in the logs, so it counts as two different starts. The served region (`inferenceRegion`) isn't in AWS's documented log format, though real records include it; without it, re-writes within 5 minutes show "region not in the logs".
-- Bedrock only for now.
+- The request checks and the log readers are for Bedrock. `claude-code` reads Claude Code's local transcripts and prices them at Anthropic API prices.
+- `claude-code`: Claude Code's transcript format isn't documented and changes between versions. It was checked on versions 2.1.266 to 2.1.325; newer ones get a note in the output, and `--debug-shapes` gives counts you can send me.
+- `claude-code`: when one step adds several things, they share its tokens by characters, and tokens per character vary (0.39 to 0.81 on my transcripts). So one output's figure can be off by a few percent (in my tests a Bash result that arrived with Claude Code's own notes came out a little low); the totals are exact.
+- `claude-code`: calls Claude Code doesn't write to the transcript aren't counted, like side calls to other models and the web search tool's own requests (the search fee is counted).
+- `claude-code`: a forked subagent starts with its parent's context. That part shows as the subagent's starting context, not as the parent outputs it came from.
+- `claude-code`: Bedrock and Vertex transcripts haven't been tested yet.
+- `claude-code`: Claude Code deletes transcripts older than 30 days unless you change `cleanupPeriodDays`, so that's as far back as it can see.
 
 ## What's next
 

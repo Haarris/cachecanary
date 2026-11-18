@@ -331,3 +331,129 @@ def test_1h_on_legacy_is_a_warning_and_on_3_7_an_error():
 def test_legacy_prices_match_aws_with_no_regional_premium(model, expected):
     r = pricing.rates_for(model).rates
     assert (r.input, r.cache_read, r.cache_write_5m) == pytest.approx(expected)
+
+
+# --- Anthropic API prices (claude-code) ---------------------------------------------------------------
+
+# Rows from https://platform.claude.com/docs/en/about-claude/pricing (checked 2026-11-18), USD per million
+# tokens: (input, 5m write, 1h write, cache read, output).
+API_ROWS = {
+    "claude-fable-5-2": (8, 10, 16, 0.20, 40),
+    "claude-mythos-5-2": (8, 10, 16, 0.20, 40),
+    "claude-fable-5-1": (10, 12.5, 20, 0.25, 50),
+    "claude-mythos-5-1": (10, 12.5, 20, 0.25, 50),
+    "claude-fable-5": (10, 12.5, 20, 1, 50),
+    "claude-mythos-5": (10, 12.5, 20, 1, 50),
+    "claude-opus-5-5": (4, 5, 8, 0.20, 20),
+    "claude-opus-5": (5, 6.25, 10, 0.50, 25),
+    "claude-opus-4-8": (5, 6.25, 10, 0.50, 25),
+    "claude-opus-4-7": (5, 6.25, 10, 0.50, 25),
+    "claude-opus-4-6": (5, 6.25, 10, 0.50, 25),
+    "claude-opus-4-5": (5, 6.25, 10, 0.50, 25),
+    "claude-opus-4-1": (15, 18.75, 30, 1.50, 75),
+    "claude-opus-4": (15, 18.75, 30, 1.50, 75),
+    "claude-sonnet-5-5": (2, 2.5, 4, 0.10, 10),
+    "claude-sonnet-5": (2, 2.5, 4, 0.20, 10),
+    "claude-sonnet-4-6": (3, 3.75, 6, 0.30, 15),
+    "claude-sonnet-4-5": (3, 3.75, 6, 0.30, 15),
+    "claude-sonnet-4": (3, 3.75, 6, 0.30, 15),
+    "claude-haiku-5-5": (0.10, 0.125, 0.20, 0.01, 0.50),
+    "claude-haiku-4-5": (1, 1.25, 2, 0.10, 5),
+}
+
+
+def _tuple(r):
+    return (r.input, r.cache_write_5m, r.cache_write_1h, r.cache_read, r.output)
+
+
+@pytest.mark.parametrize("model", list(API_ROWS))
+def test_api_prices_match_the_pricing_page(model):
+    priced = pricing.api_rates_for(model)
+    assert priced.source == "list" and priced.note == ""
+    assert _tuple(priced.rates) == pytest.approx(API_ROWS[model])
+
+
+def test_api_table_has_every_row():
+    assert set(pricing.API_PRICES) == set(API_ROWS)
+
+
+@pytest.mark.parametrize("model,key", [
+    ("claude-opus-5-5", "claude-opus-5-5"),
+    ("claude-opus-5-5[1m]", "claude-opus-5-5"),
+    ("claude-haiku-4-5-20251001", "claude-haiku-4-5"),
+    ("claude-opus-4-5@20251101", "claude-opus-4-5"),
+    ("claude-fable-5-2", "claude-fable-5-2"),
+    ("us.anthropic.claude-opus-5-5", "claude-opus-5-5"),
+    ("global.anthropic.claude-sonnet-4-6", "claude-sonnet-4-6"),
+    ("anthropic.claude-haiku-4-5-20251001-v1:0", "claude-haiku-4-5"),
+    ("claude-opus-4", "claude-opus-4"),
+    ("claude-opus-4-0", "claude-opus-4"),
+    ("claude-sonnet-4-0", "claude-sonnet-4"),
+    ("claude-opus-4-01", None),
+    ("claude-opus-4-9", None),
+    ("claude-3-7-sonnet-20250219", None),
+    ("<synthetic>", None),
+    ("", None),
+    (None, None),
+])
+def test_api_model_key_by_id_shape(model, key):
+    assert pricing.api_model_key(model) == key
+
+
+def test_first_party_ids_never_get_the_bedrock_premium():
+    assert pricing.api_rates_for("claude-opus-5-5").rates.input == 4
+    assert pricing.api_rates_for("claude-opus-5-5[1m]").rates.input == 4
+    assert pricing.api_rates_for("claude-opus-4-5@20251101").rates.input == 5
+
+
+def test_bedrock_ids_match_the_existing_bedrock_table_plus_output():
+    """For every model in both tables, the Bedrock rule over the API table gives the same input-side
+    prices as `logs` uses (and the AWS price list of 2026-11-09 shows the same output prices)."""
+    for key in set(pricing.API_PRICES) & set(pricing.GLOBAL_PRICES):
+        for prefix in ("global.anthropic.", "us.anthropic.", "anthropic."):
+            model = prefix + key
+            api = pricing.api_rates_for(model).rates
+            bedrock = pricing.rates_for(model).rates
+            assert (api.input, api.cache_read, api.cache_write_5m, api.cache_write_1h) == pytest.approx(
+                (bedrock.input, bedrock.cache_read, bedrock.cache_write_5m, bedrock.cache_write_1h)), model
+            assert api.output == pytest.approx(5 * api.input)
+
+
+def test_bedrock_regional_premium_and_notes():
+    assert pricing.api_rates_for("us.anthropic.claude-opus-5-5").rates.output == pytest.approx(22)
+    assert pricing.api_rates_for("us.anthropic.claude-opus-5-5").note == "bedrock regional"
+    assert pricing.api_rates_for("global.anthropic.claude-opus-5-5").rates.output == pytest.approx(20)
+    assert pricing.api_rates_for("us.anthropic.claude-opus-4-1").rates.input == pytest.approx(15)  # no premium on old models
+    assert pricing.api_rates_for("arn:aws:bedrock:us-east-1:1:application-inference-profile/x") is None
+
+
+def test_haiku_55_long_prompt_tier():
+    assert _tuple(pricing.api_rates_for("claude-haiku-5-5", 100_000).rates) == pytest.approx((0.1, 0.125, 0.2, 0.01, 0.5))
+    long = pricing.api_rates_for("claude-haiku-5-5", 100_001)
+    assert _tuple(long.rates) == pytest.approx((0.5, 0.625, 1, 0.05, 2.5)) and long.note == "long prompt"
+    assert pricing.api_rates_for("claude-haiku-4-5", 500_000).rates.input == 1  # other models: one price
+
+
+def test_fast_mode_prices_with_cache_multipliers_on_top():
+    assert _tuple(pricing.api_rates_for("claude-opus-5-5", speed="fast").rates) == pytest.approx((8, 10, 16, 0.4, 40))
+    assert _tuple(pricing.api_rates_for("claude-fable-5-2", speed="fast").rates) == pytest.approx((16, 20, 32, 0.4, 80))
+    assert _tuple(pricing.api_rates_for("claude-opus-5", speed="fast").rates) == pytest.approx((10, 12.5, 20, 1, 50))
+    assert pricing.api_rates_for("claude-sonnet-5-5", speed="fast") is None  # no published fast price: no guess
+    assert pricing.api_rates_for("claude-opus-5-5", speed="standard").rates.input == 4
+
+
+def test_us_data_residency_is_1_1x_for_4_6_and_later():
+    assert _tuple(pricing.api_rates_for("claude-opus-5-5", inference_geo="us").rates) == pytest.approx((4.4, 5.5, 8.8, 0.22, 22))
+    assert pricing.api_rates_for("claude-opus-5-5", inference_geo="global").rates.input == 4
+    assert pricing.api_rates_for("claude-opus-5-5", inference_geo="not_available").rates.input == 4
+    assert pricing.api_rates_for("claude-opus-4-5", inference_geo="us").rates.input == 5
+    both = pricing.api_rates_for("claude-opus-5-5", speed="fast", inference_geo="us")
+    assert both.rates.input == pytest.approx(8.8) and both.note == "fast, us only"
+    assert pricing.api_rates_for("claude-haiku-5-5", 200_000, inference_geo="us").rates.input == pytest.approx(0.55)
+
+
+def test_custom_api_price_keeps_the_model_shares():
+    opus = pricing.api_rates_for("claude-opus-5-5", custom_input_price=3, speed="fast", inference_geo="us")
+    assert opus.source == "custom" and _tuple(opus.rates) == pytest.approx((3, 3.75, 6, 0.15, 15))
+    unknown = pricing.api_rates_for("claude-unknown-9", custom_input_price=2)
+    assert _tuple(unknown.rates) == pytest.approx((2, 2.5, 4, 0.2, 10))
