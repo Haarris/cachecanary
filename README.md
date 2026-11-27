@@ -5,6 +5,8 @@ Know the moment your Claude prompt cache breaks on Amazon Bedrock, not when the 
 [![CI](https://github.com/Haarris/cachecanary/actions/workflows/ci.yml/badge.svg)](https://github.com/Haarris/cachecanary/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/Haarris/cachecanary/blob/main/LICENSE)
 
+![CacheCanary catching three cache breaks: a date inside the cached prompt, a changed system prompt, and a prompt too short to cache on Haiku 4.5](https://raw.githubusercontent.com/Haarris/cachecanary/main/docs/demo.png)
+
 Cache reads on Bedrock cost about a tenth of normal input tokens, so a long system prompt or tool list gets a lot cheaper once it's cached. The catch is that caching fails quietly. Bump a library, switch to a new model ID, put today's date in the system prompt, or let your tools come out in a different order, and the cache stops hitting. Requests still return 200 and the answers are still right. You find out from the bill.
 
 LiteLLM hit this in [July 2026](https://docs.litellm.ai/blog/bedrock-invoke-prompt-caching-incident). After an upgrade, Claude Code traffic on Bedrock went from about 90% cache hits to 25-45%, and daily spend went up 2-3x for six days before anyone noticed. Anthropic has a cache diagnostics feature, but it only works on their own API, not on Bedrock.
@@ -272,7 +274,7 @@ Everything runs on your machine or CI runner. Nothing is sent anywhere. `probe` 
 
 A hosted dashboard: cache hit rate and wasted spend per app, an alert when the rate drops, and the reason for each miss. It would run inside your own AWS account, so prompts never leave it.
 
-Using CacheCanary? I'd love to hear how it's going, good or bad, and whether you'd want the dashboard. Email me at [hello@cachecanary.com](mailto:hello@cachecanary.com). I read every message.
+Using CacheCanary? I'd love to hear how it's going, good or bad, and whether you'd want the dashboard. Email me at [hello@cachecanary.com](mailto:hello@cachecanary.com). I read every message. Questions and ideas are also welcome in [GitHub Discussions](https://github.com/Haarris/cachecanary/discussions).
 
 Vertex AI support is also planned.
 

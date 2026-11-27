@@ -1,5 +1,6 @@
 # Ship everything the test suite needs so tests also pass from the sdist.
 include LICENSE NOTICE README.md action.yml
+graft docs
 graft examples
 graft scripts
 graft site
